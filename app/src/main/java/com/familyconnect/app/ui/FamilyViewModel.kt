@@ -6,10 +6,13 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.familyconnect.app.data.model.ChatMessage
+import com.familyconnect.app.data.model.ChatMessageData
+import com.familyconnect.app.data.model.ChatThread
 import com.familyconnect.app.data.model.FamilyEvent
 import com.familyconnect.app.data.model.FamilyRole
 import com.familyconnect.app.data.model.MediaItem
 import com.familyconnect.app.data.model.NoteItem
+import com.familyconnect.app.data.model.OnlineUser
 import com.familyconnect.app.data.model.TaskItem
 import com.familyconnect.app.data.model.UserProfile
 import com.familyconnect.app.data.repository.FamilyRepository
@@ -36,6 +39,10 @@ class FamilyViewModel(
     var newAdminSetupPin by mutableStateOf("")
     var confirmAdminSetupPin by mutableStateOf("")
     var adminPinMessage by mutableStateOf<String?>(null)
+
+    // Chat feature state
+    var selectedChatThread by mutableStateOf<ChatThread?>(null)
+        private set
 
     val users = repository.usersFlow.stateIn(
         scope = viewModelScope,
@@ -97,6 +104,47 @@ class FamilyViewModel(
         initialValue = FamilyRepository.DEFAULT_ADMIN_SETUP_PIN
     )
 
+    // Chat feature flows
+    val onlineUsers = repository.observeOnlineUsers().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    val userChatThreads = run {
+        val mobile = currentUser?.mobile
+        if (mobile != null) {
+            repository.observeUserChatThreads(mobile).stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList<ChatThread>()
+            )
+        } else {
+            kotlinx.coroutines.flow.flowOf(emptyList<ChatThread>()).stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList<ChatThread>()
+            )
+        }
+    }
+
+    val currentThreadMessages = run {
+        val id = selectedChatThread?.threadId
+        if (id != null) {
+            repository.observeThreadMessages(id).stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList<ChatMessageData>()
+            )
+        } else {
+            kotlinx.coroutines.flow.flowOf(emptyList<ChatMessageData>()).stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList<ChatMessageData>()
+            )
+        }
+    }
+
     init {
         viewModelScope.launch {
             repository.seedDefaultUsers()
@@ -109,6 +157,8 @@ class FamilyViewModel(
             if (result != null) {
                 currentUser = result
                 loginError = null
+                // Set user as online in Firebase
+                repository.setUserOnline(result.mobile, result.name)
             } else {
                 loginError = "This mobile number is not allowed to use the app"
             }
@@ -139,8 +189,74 @@ class FamilyViewModel(
     }
 
     fun logout() {
+        currentUser?.let {
+            repository.setUserOffline(it.mobile, it.name)
+        }
         currentUser = null
+        selectedChatThread = null
     }
+
+    // Chat feature methods
+    fun selectChatThread(thread: ChatThread) {
+        selectedChatThread = thread
+        currentUser?.let {
+            repository.markMessagesAsRead(thread.threadId, it.mobile)
+        }
+    }
+
+    fun openDirectMessage(otherUser: OnlineUser) {
+        val current = currentUser ?: return
+        repository.createOrGetChatThread(
+            currentUserMobile = current.mobile,
+            currentUserName = current.name,
+            otherUserMobile = otherUser.mobile,
+            otherUserName = otherUser.name
+        ) { threadId ->
+            if (threadId != null) {
+                // Find and select the thread
+                viewModelScope.launch {
+                    val thread = userChatThreads.value.find { it.threadId == threadId }
+                    if (thread != null) {
+                        selectChatThread(thread)
+                    }
+                }
+            }
+        }
+    }
+
+    fun sendChatMessageToThread(body: String, mediaUri: String? = null) {
+        val current = currentUser ?: return
+        val thread = selectedChatThread ?: return
+
+        if (body.isBlank()) return
+
+        repository.sendChatMessage(
+            threadId = thread.threadId,
+            senderMobile = current.mobile,
+            senderName = current.name,
+            body = body,
+            mediaUri = mediaUri
+        ) { success ->
+            if (!success) {
+                // Handle error
+            }
+        }
+    }
+
+    fun clearSelectedThread() {
+        selectedChatThread = null
+    }
+
+    fun getOtherUserInThread(thread: ChatThread): OnlineUser? {
+        val current = currentUser ?: return null
+        return onlineUsers.value.find { user ->
+            (thread.participant1Mobile == current.mobile && user.mobile == thread.participant2Mobile) ||
+            (thread.participant2Mobile == current.mobile && user.mobile == thread.participant1Mobile)
+        }
+    }
+
+    fun formatTime(timestamp: Long): String = repository.formatTime(timestamp)
+    fun formatDate(timestamp: Long): String = repository.formatDate(timestamp)
 
     fun addEvent(title: String, dateTime: String, colorTag: String, recurring: Boolean, reminderMinutes: Int) {
         viewModelScope.launch {

@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "620057947345",
+    "firebase_url": "https://familyconnect-a08bf-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "familyconnect-a08bf",
+    "storage_bucket": "familyconnect-a08bf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:620057947345:android:1f8332234b43a27cbe29f0",
+        "android_client_info": {
+          "package_name": "com.familyconnect.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA2m7P3voU6ohWN08clp28DrIA91qbc8xE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

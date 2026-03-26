@@ -36,6 +36,35 @@ data class ChatMessage(
     val timestamp: String
 )
 
+// Chat feature models for Firebase
+data class ChatThread(
+    val threadId: String = "",
+    val participant1Mobile: String = "",
+    val participant2Mobile: String = "",
+    val participant1Name: String = "",
+    val participant2Name: String = "",
+    val lastMessage: String = "",
+    val lastMessageTime: Long = 0,
+    val createdAt: Long = 0
+)
+
+data class ChatMessageData(
+    val messageId: String = "",
+    val senderMobile: String = "",
+    val senderName: String = "",
+    val body: String = "",
+    val timestamp: Long = 0,
+    val read: Boolean = false,
+    val mediaUri: String? = null
+)
+
+data class OnlineUser(
+    val mobile: String = "",
+    val name: String = "",
+    val lastSeen: Long = 0,
+    val isOnline: Boolean = false
+)
+
 data class MediaItem(
     val id: Int,
     val title: String,

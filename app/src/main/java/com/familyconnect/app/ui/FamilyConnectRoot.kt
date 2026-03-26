@@ -1,5 +1,7 @@
 package com.familyconnect.app.ui
 
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,7 +51,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -462,7 +463,7 @@ private fun CalendarScreen(viewModel: FamilyViewModel, canEdit: Boolean) {
                 OutlinedTextField(dateTime, { dateTime = it }, label = { Text("Date & Time (YYYY-MM-DD HH:mm)") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(colorTag, { colorTag = it }, label = { Text("Color tag") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(reminder, { reminder = it.filter(Char::isDigit) }, label = { Text("Reminder minutes") }, modifier = Modifier.fillMaxWidth())
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Recurring")
                     Switch(checked = recurring, onCheckedChange = { recurring = it })
                 }
@@ -499,7 +500,6 @@ private fun ChatScreen(viewModel: FamilyViewModel) {
     val messages by viewModel.messages.collectAsState(initial = emptyList())
     var target by remember { mutableStateOf("Group") }
     var body by remember { mutableStateOf("") }
-    var mediaUri by remember { mutableStateOf("") }
 
     LazyColumn(
         modifier = Modifier
@@ -509,17 +509,16 @@ private fun ChatScreen(viewModel: FamilyViewModel) {
     ) {
         item {
             Text("Messaging/Chat", style = MaterialTheme.typography.titleLarge)
+            Text("(Firebase chat coming soon - configure google-services.json)")
         }
         item {
             OutlinedTextField(target, { target = it }, label = { Text("Target (Group or name)") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(body, { body = it }, label = { Text("Message") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(mediaUri, { mediaUri = it }, label = { Text("Media URI (optional)") }, modifier = Modifier.fillMaxWidth())
             Button(
                 onClick = {
                     if (body.isNotBlank()) {
-                        viewModel.sendMessage(target, body, mediaUri.takeIf { it.isNotBlank() })
+                        viewModel.sendMessage(target, body, null)
                         body = ""
-                        mediaUri = ""
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -531,14 +530,7 @@ private fun ChatScreen(viewModel: FamilyViewModel) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("${message.sender} -> ${message.target}", fontWeight = FontWeight.Bold)
                     Text(message.body)
-                    message.mediaUri?.let { Text("Media: $it") }
                     Text("Time: ${message.timestamp}")
-                    Text("Read: ${if (message.read) "Yes" else "No"}")
-                    if (!message.read) {
-                        TextButton(onClick = { viewModel.markMessageRead(message.id) }) {
-                            Text("Mark Read")
-                        }
-                    }
                 }
             }
         }

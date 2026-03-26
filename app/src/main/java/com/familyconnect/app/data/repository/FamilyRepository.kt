@@ -176,6 +176,55 @@ class FamilyRepository(
         context.dataStore.edit { it[ADMIN_SETUP_PIN_KEY] = pin.trim() }
     }
 
+    // Chat feature methods
+    fun observeOnlineUsers() = FirebaseService.observeOnlineUsers()
+
+    fun observeUserChatThreads(userMobile: String) = FirebaseService.observeUserChatThreads(userMobile)
+
+    fun observeThreadMessages(threadId: String) = FirebaseService.observeThreadMessages(threadId)
+
+    fun setUserOnline(mobile: String, name: String) {
+        FirebaseService.setUserOnline(mobile, name)
+    }
+
+    fun setUserOffline(mobile: String, name: String) {
+        FirebaseService.setUserOffline(mobile, name)
+    }
+
+    fun createOrGetChatThread(
+        currentUserMobile: String,
+        currentUserName: String,
+        otherUserMobile: String,
+        otherUserName: String,
+        onResult: (String?) -> Unit
+    ) {
+        FirebaseService.createOrGetChatThread(
+            currentUserMobile,
+            currentUserName,
+            otherUserMobile,
+            otherUserName,
+            onResult
+        )
+    }
+
+    fun sendChatMessage(
+        threadId: String,
+        senderMobile: String,
+        senderName: String,
+        body: String,
+        mediaUri: String? = null,
+        onResult: (Boolean) -> Unit
+    ) {
+        FirebaseService.sendMessage(threadId, senderMobile, senderName, body, mediaUri, onResult)
+    }
+
+    fun markMessagesAsRead(threadId: String, senderMobile: String) {
+        FirebaseService.markMessagesAsRead(threadId, senderMobile)
+    }
+
+    fun formatTime(timestamp: Long): String = FirebaseService.formatTime(timestamp)
+    fun formatDate(timestamp: Long): String = FirebaseService.formatDate(timestamp)
+
     companion object {
         const val DEFAULT_ADMIN_SETUP_PIN = "2468"
         val ADMIN_SETUP_PIN_KEY = stringPreferencesKey("admin_setup_pin")
