@@ -213,9 +213,24 @@ class FamilyRepository(
         senderName: String,
         body: String,
         mediaUri: String? = null,
+        replyToMessageId: String? = null,
+        replyToSenderName: String? = null,
+        replyToBody: String? = null,
+        recipientMobile: String? = null,
         onResult: (Boolean) -> Unit
     ) {
-        FirebaseService.sendMessage(threadId, senderMobile, senderName, body, mediaUri, onResult)
+        FirebaseService.sendMessage(
+            threadId = threadId,
+            senderMobile = senderMobile,
+            senderName = senderName,
+            body = body,
+            mediaUri = mediaUri,
+            replyToMessageId = replyToMessageId,
+            replyToSenderName = replyToSenderName,
+            replyToBody = replyToBody,
+            recipientMobile = recipientMobile,
+            onResult = onResult
+        )
     }
 
     fun markMessagesAsRead(threadId: String, senderMobile: String) {
@@ -224,6 +239,64 @@ class FamilyRepository(
 
     fun formatTime(timestamp: Long): String = FirebaseService.formatTime(timestamp)
     fun formatDate(timestamp: Long): String = FirebaseService.formatDate(timestamp)
+    fun formatLastSeen(timestamp: Long): String = FirebaseService.formatLastSeen(timestamp)
+
+    // ============ AUDIO CALL METHODS ============
+    
+    fun sendCallRequest(
+        callId: String,
+        fromUserId: String,
+        fromUserName: String,
+        toUserId: String,
+        threadId: String,
+        onResult: (Boolean) -> Unit
+    ) {
+        FirebaseService.sendCallRequest(
+            callId, fromUserId, fromUserName, toUserId, threadId, onResult
+        )
+    }
+
+    fun observeCallRequests(userId: String) = FirebaseService.observeCallRequests(userId)
+
+    fun updateCallStatus(
+        threadId: String,
+        callId: String,
+        status: String,
+        onResult: (Boolean) -> Unit
+    ) {
+        FirebaseService.updateCallStatus(threadId, callId, status, onResult)
+    }
+
+    fun sendCallSignaling(
+        threadId: String,
+        callId: String,
+        type: String,
+        sdp: String,
+        senderId: String,
+        onResult: (Boolean) -> Unit
+    ) {
+        FirebaseService.sendCallSignaling(threadId, callId, type, sdp, senderId, onResult)
+    }
+
+    fun observeCallSignaling(threadId: String, callId: String) =
+        FirebaseService.observeCallSignaling(threadId, callId)
+
+    fun observeCallById(threadId: String, callId: String) =
+        FirebaseService.observeCallById(threadId, callId)
+
+    fun sendIceCandidate(
+        threadId: String,
+        callId: String,
+        candidate: String,
+        sdpMLineIndex: Int,
+        sdpMid: String,
+        senderId: String,
+        onResult: (Boolean) -> Unit
+    ) {
+        FirebaseService.sendIceCandidate(
+            threadId, callId, candidate, sdpMLineIndex, sdpMid, senderId, onResult
+        )
+    }
 
     companion object {
         const val DEFAULT_ADMIN_SETUP_PIN = "2468"

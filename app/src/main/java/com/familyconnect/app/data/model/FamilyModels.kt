@@ -45,7 +45,8 @@ data class ChatThread(
     val participant2Name: String = "",
     val lastMessage: String = "",
     val lastMessageTime: Long = 0,
-    val createdAt: Long = 0
+    val createdAt: Long = 0,
+    val unreadCount: Int = 0   // unread messages for the current observer
 )
 
 data class ChatMessageData(
@@ -55,7 +56,10 @@ data class ChatMessageData(
     val body: String = "",
     val timestamp: Long = 0,
     val read: Boolean = false,
-    val mediaUri: String? = null
+    val mediaUri: String? = null,
+    val replyToMessageId: String? = null,
+    val replyToSenderName: String? = null,
+    val replyToBody: String? = null
 )
 
 data class OnlineUser(

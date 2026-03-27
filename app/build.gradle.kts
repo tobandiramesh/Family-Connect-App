@@ -85,6 +85,14 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
     implementation("com.google.firebase:firebase-database-ktx")
     implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.firebase:firebase-storage-ktx")
+    implementation("io.github.webrtc-sdk:android:125.6422.07")
+    
+    // Media/Audio APIs (built into Android, no external dependency needed)
+    
+    // File/Media pickers
+    implementation("androidx.activity:activity:1.9.1")
+    implementation("androidx.activity:activity-ktx:1.9.1")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.06.00"))

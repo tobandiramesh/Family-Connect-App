@@ -61,7 +61,36 @@ The chat feature has been implemented with the following capabilities:
 - Add user-specific security rules that verify user identity before allowing read/write
 - Use `.uid` from Firebase Auth to restrict data access
 
-### Step 5: Encode Project ID in Code
+### Step 5: Enable Firebase Storage
+1. In Firebase Console, go to "Build" → "Storage"
+2. Click "Get Started"
+3. Accept the default bucket location (same as your Realtime Database)
+4. Click "Done"
+5. Go to the "Rules" tab
+6. Replace the default rules with:
+
+```
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /chats/{threadId}/{fileName} {
+      // Allow anyone to read and write to chat files
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}
+```
+
+7. Click "Publish"
+
+⚠️ **Security Note**: These Storage rules allow all access. For production:
+- Implement Firebase Authentication first
+- Restrict uploads to authenticated users
+- Validate file sizes and types before allowing uploads
+- Set storage quotas per user/thread
+
+### Step 6: Encode Project ID in Code
 The Firebase SDK reads your configuration from `google-services.json`. The SDK automatically initializes Firebase when the app starts.
 
 ## How the Chat Feature Works
@@ -122,6 +151,16 @@ Use these mobile numbers to log in and test chat between different roles.
 - Confirm google-services.json is in correct location
 - Check Firebase console for rule errors
 
+### Media Upload Not Working
+**Symptom**: Photos or documents fail to send
+**Solution**:
+- Verify Firebase Storage is enabled (Step 5)
+- Check Storage Rules are configured correctly (allow read/write)
+- Ensure app has READ_EXTERNAL_STORAGE and WRITE_EXTERNAL_STORAGE permissions
+- Grant file access permissions when prompted by the app
+- Check device has enough storage space
+- Verify file is accessible from the file picker
+
 ### No Online Users Showing
 **Symptom**: Online users list is empty
 **Solution**:
@@ -145,9 +184,10 @@ Use these mobile numbers to log in and test chat between different roles.
 ## Next Steps
 
 1. **Authentication**: Implement Firebase Authentication for phone number verification in production
-2. **Media Support**: Add image/file upload to messages
-3. **Read Receipts**: Enhance UI to show when messages are read
-4. **Notifications**: Add Firebase Cloud Messaging (FCM) for push notifications
+2. **Read Receipts**: Enhance UI to show when messages are read
+3. **Notifications**: Add Firebase Cloud Messaging (FCM) for push notifications
+4. **Image Preview**: Display thumbnail previews of images in chat instead of just clickable text
+5. **File Sharing Limits**: Add file size limits and better error handling for large files
 5. **Encryption**: Add end-to-end encryption for messages
 6. **Backup**: Implement database backup strategy
 
