@@ -384,6 +384,7 @@ object FirebaseService {
         fromUserName: String,
         toUserId: String,
         threadId: String,
+        callType: String = "audio",
         onResult: (Boolean) -> Unit
     ) {
         try {
@@ -394,6 +395,7 @@ object FirebaseService {
                 "toUserId" to normalizeMobile(toUserId),
                 "threadId" to threadId,
                 "status" to "pending",
+                "callType" to callType,
                 "createdAt" to System.currentTimeMillis()
             )
 
@@ -443,7 +445,8 @@ object FirebaseService {
                                         "toUserId" to toUserId,
                                         "threadId" to parsedThreadId,
                                         "createdAt" to (callSnapshot.child("createdAt").value as? Long ?: 0L),
-                                        "status" to status
+                                        "status" to status,
+                                        "callType" to (callSnapshot.child("callType").value as? String ?: "audio")
                                     )
                                     callRequests.add(callData)
                                 }

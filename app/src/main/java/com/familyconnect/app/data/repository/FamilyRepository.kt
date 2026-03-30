@@ -249,10 +249,11 @@ class FamilyRepository(
         fromUserName: String,
         toUserId: String,
         threadId: String,
+        callType: String = "audio",
         onResult: (Boolean) -> Unit
     ) {
         FirebaseService.sendCallRequest(
-            callId, fromUserId, fromUserName, toUserId, threadId, onResult
+            callId, fromUserId, fromUserName, toUserId, threadId, callType, onResult
         )
     }
 

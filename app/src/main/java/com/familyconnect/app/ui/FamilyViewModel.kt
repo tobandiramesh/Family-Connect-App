@@ -23,6 +23,7 @@ import com.familyconnect.app.notifications.NotificationHelper
 import com.familyconnect.app.webrtc.CallRequest
 import com.familyconnect.app.webrtc.CallStatus
 import com.familyconnect.app.webrtc.CallState
+import com.familyconnect.app.webrtc.CallType
 import com.familyconnect.app.webrtc.WebRTCManager
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.Job
@@ -45,6 +46,8 @@ class FamilyViewModel(
     private val eventExpiryWindowMillis = TimeUnit.DAYS.toMillis(3)
     private var previousMessageIds = setOf<String>()
     private val webRTCManager = WebRTCManager(context)
+
+    fun getWebRTCManager(): WebRTCManager = webRTCManager
 
     var currentUser by mutableStateOf<UserProfile?>(null)
         private set
@@ -565,8 +568,10 @@ class FamilyViewModel(
                         }
 
                         if (callState.status == CallStatus.IDLE && callId.isNotBlank()) {
+                            val incomingCallType = if ((incoming["callType"] as? String) == "video") CallType.VIDEO else CallType.AUDIO
                             callState = callState.copy(
                                 status = CallStatus.RINGING,
+                                callType = incomingCallType,
                                 incomingCallRequest = CallRequest(
                                     callId = callId,
                                     fromUserId = incoming["fromUserId"] as? String ?: "",
@@ -574,7 +579,8 @@ class FamilyViewModel(
                                     toUserId = incoming["toUserId"] as? String ?: user.mobile,
                                     threadId = incoming["threadId"] as? String ?: "",
                                     createdAt = incoming["createdAt"] as? Long ?: System.currentTimeMillis(),
-                                    status = incoming["status"] as? String ?: "pending"
+                                    status = incoming["status"] as? String ?: "pending",
+                                    callType = incoming["callType"] as? String ?: "audio"
                                 ),
                                 activeCallId = callId,
                                 activeThreadId = incoming["threadId"] as? String,
@@ -618,7 +624,8 @@ class FamilyViewModel(
                     fromUserId = user.mobile,
                     fromUserName = user.name,
                     toUserId = toUserId,
-                    threadId = threadId
+                    threadId = threadId,
+                    callType = if (callState.callType == CallType.VIDEO) "video" else "audio"
                 ) { success ->
                     Log.d("FamilyViewModel", "📞 Call request sent: success=$success, callId=$callId")
                     if (success) {
@@ -633,7 +640,8 @@ class FamilyViewModel(
                                 fromUserId = user.mobile,
                                 fromUserName = user.name,
                                 toUserId = toUserId,
-                                threadId = threadId
+                                threadId = threadId,
+                                callType = if (callState.callType == CallType.VIDEO) "video" else "audio"
                             ) { retrySuccess ->
                                 Log.d("FamilyViewModel", "📞 Retry call request: success=$retrySuccess")
                                 if (retrySuccess) {
@@ -651,7 +659,7 @@ class FamilyViewModel(
         }
     }
 
-    fun initiateCallForSelectedThread() {
+    fun initiateCallForSelectedThread(callType: CallType = CallType.AUDIO) {
         val current = currentUser ?: return
         val thread = selectedChatThread ?: return
 
@@ -685,7 +693,22 @@ class FamilyViewModel(
             thread.participant1Name
         }
 
+        callState = callState.copy(callType = callType)
         initiateCall(recipientMobile, thread.threadId, otherName.ifBlank { "User" })
+    }
+
+    fun initiateVideoCallForSelectedThread() {
+        initiateCallForSelectedThread(CallType.VIDEO)
+    }
+
+    fun toggleLocalVideo(enabled: Boolean) {
+        webRTCManager.toggleLocalVideo(enabled)
+        callState = callState.copy(localVideoEnabled = enabled)
+    }
+
+    fun switchCamera() {
+        webRTCManager.switchCamera()
+        callState = callState.copy(isFrontCamera = !callState.isFrontCamera)
     }
 
     fun acceptCall(callId: String, threadId: String, fromUserNameOverride: String? = null) {
@@ -861,7 +884,8 @@ class FamilyViewModel(
             }
         }
 
-        webRTCManager.initializePeerConnection()
+        val withVideo = callState.callType == CallType.VIDEO
+        webRTCManager.initializePeerConnection(withVideo = withVideo)
         webRTCManager.startAudioCall()
         startObservingSignaling(threadId, callId)
 

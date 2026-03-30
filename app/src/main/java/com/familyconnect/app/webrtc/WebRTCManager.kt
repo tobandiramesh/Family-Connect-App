@@ -2,9 +2,16 @@ package com.familyconnect.app.webrtc
 
 import android.content.Context
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
+import org.webrtc.Camera2Enumerator
+import org.webrtc.CameraVideoCapturer
+import org.webrtc.DefaultVideoDecoderFactory
+import org.webrtc.DefaultVideoEncoderFactory
+import org.webrtc.EglBase
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
@@ -13,14 +20,20 @@ import org.webrtc.RtpReceiver
 import org.webrtc.RtpTransceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
+import org.webrtc.SurfaceTextureHelper
+import org.webrtc.SurfaceViewRenderer
+import org.webrtc.VideoSource
+import org.webrtc.VideoTrack
 
 /**
- * Real WebRTC audio manager using offer/answer SDP and ICE candidates.
+ * WebRTC manager supporting both audio-only and video calls.
  */
 class WebRTCManager(private val context: Context) {
     private val TAG = "WebRTCManager"
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    val eglBase: EglBase = EglBase.create()
 
     private var peerConnectionFactory: PeerConnectionFactory? = null
     private var peerConnection: PeerConnection? = null
@@ -28,10 +41,27 @@ class WebRTCManager(private val context: Context) {
     private var localAudioTrack: AudioTrack? = null
     private var remoteAudioTrack: AudioTrack? = null
 
+    // Video fields
+    private var videoCapturer: CameraVideoCapturer? = null
+    private var surfaceTextureHelper: SurfaceTextureHelper? = null
+    private var localVideoSource: VideoSource? = null
+    var localVideoTrack: VideoTrack? = null
+        private set
+    var remoteVideoTrack: VideoTrack? = null
+        private set
+    private var isVideoEnabled = false
+    private var usingFrontCamera = true
+
     var onConnectionStateChanged: ((Boolean) -> Unit)? = null
     var onLocalOfferCreated: ((String) -> Unit)? = null
     var onLocalAnswerCreated: ((String) -> Unit)? = null
     var onIceCandidateGenerated: ((candidate: String, sdpMLineIndex: Int, sdpMid: String) -> Unit)? = null
+    var onRemoteVideoTrackReceived: ((VideoTrack) -> Unit)? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    // Keep references so we can remove sinks on cleanup
+    private var localRenderer: SurfaceViewRenderer? = null
+    private var remoteRenderer: SurfaceViewRenderer? = null
 
     init {
         initializeFactory()
@@ -44,26 +74,34 @@ class WebRTCManager(private val context: Context) {
                 .createInitializationOptions()
             PeerConnectionFactory.initialize(initOptions)
 
-            peerConnectionFactory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+            val encoderFactory = DefaultVideoEncoderFactory(
+                eglBase.eglBaseContext, true, true
+            )
+            val decoderFactory = DefaultVideoDecoderFactory(eglBase.eglBaseContext)
+
+            peerConnectionFactory = PeerConnectionFactory.builder()
+                .setVideoEncoderFactory(encoderFactory)
+                .setVideoDecoderFactory(decoderFactory)
+                .createPeerConnectionFactory()
 
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
             audioManager.isSpeakerphoneOn = true
             audioManager.isMicrophoneMute = false
-            Log.d(TAG, "WebRTC factory initialized")
+            Log.d(TAG, "WebRTC factory initialized with video support")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize WebRTC factory: ${e.message}")
         }
     }
 
-    fun initializePeerConnection() {
+    fun initializePeerConnection(withVideo: Boolean = false) {
         disposePeerConnectionOnly()
+        isVideoEnabled = withVideo
 
         val factory = peerConnectionFactory ?: return
         val rtcConfig = PeerConnection.RTCConfiguration(
             listOf(
                 PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
                 PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
-                // Public relay for testing so calls can connect across strict NATs/mobile carriers.
                 PeerConnection.IceServer.builder("turn:openrelay.metered.ca:80")
                     .setUsername("openrelayproject")
                     .setPassword("openrelayproject")
@@ -117,6 +155,15 @@ class WebRTCManager(private val context: Context) {
                 if (track is AudioTrack) {
                     remoteAudioTrack = track
                     remoteAudioTrack?.setEnabled(true)
+                } else if (track is VideoTrack) {
+                    Log.d(TAG, "Remote VIDEO track received via onAddTrack")
+                    remoteVideoTrack = track
+                    remoteVideoTrack?.setEnabled(true)
+                    // Attach to renderer if already initialized, and notify on main thread
+                    mainHandler.post {
+                        remoteRenderer?.let { track.addSink(it) }
+                        onRemoteVideoTrackReceived?.invoke(track)
+                    }
                 }
             }
 
@@ -125,10 +172,19 @@ class WebRTCManager(private val context: Context) {
                 if (track is AudioTrack) {
                     remoteAudioTrack = track
                     remoteAudioTrack?.setEnabled(true)
+                } else if (track is VideoTrack) {
+                    Log.d(TAG, "Remote VIDEO track received via onTrack")
+                    remoteVideoTrack = track
+                    remoteVideoTrack?.setEnabled(true)
+                    mainHandler.post {
+                        remoteRenderer?.let { track.addSink(it) }
+                        onRemoteVideoTrackReceived?.invoke(track)
+                    }
                 }
             }
         })
 
+        // Always add audio track
         val audioConstraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
@@ -140,6 +196,103 @@ class WebRTCManager(private val context: Context) {
         localAudioTrack = factory.createAudioTrack("LOCAL_AUDIO", localAudioSource)
         localAudioTrack?.setEnabled(true)
         peerConnection?.addTrack(localAudioTrack)
+
+        // Add video track if this is a video call
+        if (withVideo) {
+            startLocalVideo(factory)
+        }
+    }
+
+    private fun startLocalVideo(factory: PeerConnectionFactory) {
+        try {
+            val enumerator = Camera2Enumerator(context)
+            val deviceNames = enumerator.deviceNames
+            val frontCamera = deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
+            val backCamera = deviceNames.firstOrNull { enumerator.isBackFacing(it) }
+            val cameraName = frontCamera ?: backCamera ?: return
+            usingFrontCamera = cameraName == frontCamera
+
+            videoCapturer = enumerator.createCapturer(cameraName, null)
+            surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
+            localVideoSource = factory.createVideoSource(videoCapturer!!.isScreencast)
+            videoCapturer!!.initialize(surfaceTextureHelper, context, localVideoSource!!.capturerObserver)
+            videoCapturer!!.startCapture(640, 480, 30)
+
+            localVideoTrack = factory.createVideoTrack("LOCAL_VIDEO", localVideoSource)
+            localVideoTrack?.setEnabled(true)
+            peerConnection?.addTrack(localVideoTrack)
+            Log.d(TAG, "Local video started with camera: $cameraName")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start local video: ${e.message}")
+        }
+    }
+
+    fun initLocalRenderer(renderer: SurfaceViewRenderer) {
+        try {
+            // Release previous if any
+            releaseLocalRenderer()
+            renderer.init(eglBase.eglBaseContext, null)
+            renderer.setMirror(usingFrontCamera)
+            renderer.setZOrderMediaOverlay(true)
+            localRenderer = renderer
+            localVideoTrack?.addSink(renderer)
+            Log.d(TAG, "Local renderer initialized, track=${localVideoTrack != null}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing local renderer: ${e.message}")
+        }
+    }
+
+    fun initRemoteRenderer(renderer: SurfaceViewRenderer) {
+        try {
+            releaseRemoteRenderer()
+            renderer.init(eglBase.eglBaseContext, null)
+            renderer.setMirror(false)
+            remoteRenderer = renderer
+            remoteVideoTrack?.addSink(renderer)
+            Log.d(TAG, "Remote renderer initialized, track=${remoteVideoTrack != null}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing remote renderer: ${e.message}")
+        }
+    }
+
+    fun releaseLocalRenderer() {
+        try {
+            localRenderer?.let { r ->
+                localVideoTrack?.removeSink(r)
+                r.release()
+            }
+            localRenderer = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing local renderer: ${e.message}")
+        }
+    }
+
+    fun releaseRemoteRenderer() {
+        try {
+            remoteRenderer?.let { r ->
+                remoteVideoTrack?.removeSink(r)
+                r.release()
+            }
+            remoteRenderer = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing remote renderer: ${e.message}")
+        }
+    }
+
+    fun switchCamera() {
+        videoCapturer?.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+            override fun onCameraSwitchDone(isFrontFacing: Boolean) {
+                usingFrontCamera = isFrontFacing
+                Log.d(TAG, "Camera switched, front=$isFrontFacing")
+            }
+            override fun onCameraSwitchError(error: String?) {
+                Log.e(TAG, "Camera switch error: $error")
+            }
+        })
+    }
+
+    fun toggleLocalVideo(enabled: Boolean) {
+        localVideoTrack?.setEnabled(enabled)
     }
 
     fun createOffer() {
@@ -200,18 +353,30 @@ class WebRTCManager(private val context: Context) {
     fun startAudioCall() {
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         audioManager.isMicrophoneMute = false
-        // Keep speaker on by default for better audibility during testing.
         audioManager.isSpeakerphoneOn = true
         remoteAudioTrack?.setEnabled(true)
     }
 
-    fun stopAudioCall() {
+    fun stopCall() {
         onConnectionStateChanged?.invoke(false)
+        try {
+            videoCapturer?.stopCapture()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping capture: ${e.message}")
+        }
+        videoCapturer?.dispose()
+        videoCapturer = null
+        releaseLocalRenderer()
+        releaseRemoteRenderer()
         disposePeerConnectionOnly()
         audioManager.mode = AudioManager.MODE_NORMAL
         audioManager.isSpeakerphoneOn = false
         audioManager.isMicrophoneMute = false
+        isVideoEnabled = false
     }
+
+    // Keep backward compat alias
+    fun stopAudioCall() = stopCall()
 
     fun toggleLocalAudio(enabled: Boolean) {
         localAudioTrack?.setEnabled(enabled)
@@ -219,14 +384,19 @@ class WebRTCManager(private val context: Context) {
     }
 
     fun toggleRemoteAudio(enabled: Boolean) {
-        // Speaker button should only change audio output route.
-        // Do not mute remote track here, otherwise users may think call has no audio.
         remoteAudioTrack?.setEnabled(true)
         audioManager.isSpeakerphoneOn = enabled
     }
 
     private fun disposePeerConnectionOnly() {
         try {
+            remoteVideoTrack = null
+            localVideoTrack?.setEnabled(false)
+            localVideoTrack = null
+            localVideoSource?.dispose()
+            localVideoSource = null
+            surfaceTextureHelper?.dispose()
+            surfaceTextureHelper = null
             remoteAudioTrack = null
             localAudioTrack?.setEnabled(false)
             localAudioTrack = null
@@ -241,9 +411,10 @@ class WebRTCManager(private val context: Context) {
     }
 
     fun dispose() {
-        stopAudioCall()
+        stopCall()
         peerConnectionFactory?.dispose()
         peerConnectionFactory = null
+        eglBase.release()
     }
 
     private class SimpleSdpObserver(private val tag: String) : SdpObserver {

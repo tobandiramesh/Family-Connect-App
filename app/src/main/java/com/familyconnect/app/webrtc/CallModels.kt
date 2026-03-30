@@ -1,5 +1,11 @@
 package com.familyconnect.app.webrtc
 
+// Call type: audio-only or video
+enum class CallType {
+    AUDIO,
+    VIDEO
+}
+
 // Call status states
 enum class CallStatus {
     IDLE,           // No active call
@@ -18,7 +24,8 @@ data class CallRequest(
     val toUserId: String = "",
     val threadId: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val status: String = "pending"  // pending, accepted, rejected, ended
+    val status: String = "pending",  // pending, accepted, rejected, ended
+    val callType: String = "audio"   // audio, video
 )
 
 // Call signaling model for SDP and ICE candidates
@@ -40,6 +47,7 @@ data class IceCandidateData(
 // Call state for UI
 data class CallState(
     val status: CallStatus = CallStatus.IDLE,
+    val callType: CallType = CallType.AUDIO,
     val incomingCallRequest: CallRequest? = null,
     val activeCallId: String? = null,
     val activeThreadId: String? = null,
@@ -47,5 +55,7 @@ data class CallState(
     val callDuration: Long = 0,
     val localAudioEnabled: Boolean = true,
     val remoteAudioEnabled: Boolean = true,
+    val localVideoEnabled: Boolean = true,
+    val isFrontCamera: Boolean = true,
     val isCallConnected: Boolean = false
 )

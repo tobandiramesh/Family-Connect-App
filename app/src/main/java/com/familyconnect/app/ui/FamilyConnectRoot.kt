@@ -103,6 +103,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.content.ContextCompat
 import com.familyconnect.app.data.model.ChatMessageData
+import com.familyconnect.app.webrtc.CallType
 import com.familyconnect.app.data.model.FamilyRole
 import com.familyconnect.app.ui.theme.FamilyConnectTheme
 import com.familyconnect.app.webrtc.CallStatus
@@ -319,6 +320,7 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
     val callState = viewModel.callState
     val context = LocalContext.current
     val pendingMicAction = remember { mutableStateOf<(() -> Unit)?>(null) }
+    val pendingCallAction = remember { mutableStateOf<(() -> Unit)?>(null) }
     val micPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -326,6 +328,14 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
             pendingMicAction.value?.invoke()
         }
         pendingMicAction.value = null
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            pendingCallAction.value?.invoke()
+        }
+        pendingCallAction.value = null
     }
 
     fun runWithMicPermission(action: () -> Unit) {
@@ -342,96 +352,146 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
         }
     }
 
+    fun runWithCallPermissions(needCamera: Boolean, action: () -> Unit) {
+        val micGranted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        val camGranted = !needCamera || ContextCompat.checkSelfPermission(
+            context, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (micGranted && camGranted) {
+            action()
+        } else if (!micGranted) {
+            // Ask mic first, then camera
+            pendingMicAction.value = {
+                if (needCamera && ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    pendingCallAction.value = action
+                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                } else {
+                    action()
+                }
+            }
+            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        } else {
+            // Mic granted but camera not
+            pendingCallAction.value = action
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
     var selectedTab by remember { mutableStateOf(HomeTab.CHAT) }
 
-    Scaffold(
-        topBar = {
-            // Hide top bar entirely when a chat thread is open - like WhatsApp
-            if (!(selectedTab == HomeTab.CHAT && viewModel.selectedChatThread != null)) {
-                TopAppBar(
-                    title = { 
-                        Column {
-                            Text("👨‍👩‍👧‍👦 Family Chat", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                            Text("${user.name} • ${user.role.name}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
-                        }
-                    },
-                    colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                )
-            }
-        },
-        bottomBar = {
-            // Hide bottom nav when a chat thread is open so keyboard can push layout up properly
-            if (!(selectedTab == HomeTab.CHAT && viewModel.selectedChatThread != null)) {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.height(70.dp)
-                ) {
-                    NavigationBarItem(
-                        selected = selectedTab == HomeTab.CHAT,
-                        onClick = { selectedTab = HomeTab.CHAT },
-                        icon = { Icon(Icons.Default.Chat, contentDescription = "Chat", modifier = Modifier.size(24.dp)) },
-                        label = { Text("💬 Chat", style = MaterialTheme.typography.labelSmall) }
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == HomeTab.SETTINGS,
-                        onClick = { selectedTab = HomeTab.SETTINGS },
-                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(24.dp)) },
-                        label = { Text("⚙️ Settings", style = MaterialTheme.typography.labelSmall) }
-                    )
-                }
-            }
-        }
-    ) { innerPadding ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.padding(innerPadding)) {
-                when (selectedTab) {
-                    HomeTab.CHAT -> ChatScreen(
-                        viewModel = viewModel,
-                        onStartAudioCall = {
-                            runWithMicPermission {
-                                viewModel.initiateCallForSelectedThread()
-                            }
-                        }
-                    )
-                    HomeTab.SETTINGS -> SettingsScreen(viewModel, user.role)
-                }
-            }
+    // Determine if a full-screen call overlay should be shown
+    val isInCall = callState.status == CallStatus.REQUESTING ||
+            callState.status == CallStatus.CONNECTING ||
+            callState.status == CallStatus.ACTIVE
 
-            if (callState.status == CallStatus.RINGING && callState.incomingCallRequest != null) {
-                IncomingCallOverlay(
-                    callerName = callState.incomingCallRequest.fromUserName.ifBlank { "Unknown" },
-                    onAccept = {
-                        runWithMicPermission {
-                            viewModel.acceptCall(
-                                callState.incomingCallRequest.callId,
-                                callState.incomingCallRequest.threadId,
-                                callState.incomingCallRequest.fromUserName
-                            )
-                        }
-                    },
-                    onReject = {
-                        viewModel.rejectCall(
-                            callState.incomingCallRequest.callId,
-                            callState.incomingCallRequest.threadId
+    // When a call is active, render the call screen full-screen OUTSIDE the Scaffold
+    if (isInCall) {
+        if (callState.callType == CallType.VIDEO) {
+            VideoCallScreen(
+                threadName = callState.activeCallPartyName ?: "Unknown",
+                callState = callState,
+                webRTCManager = viewModel.getWebRTCManager(),
+                onToggleMute = { enabled -> viewModel.toggleLocalAudio(enabled) },
+                onToggleVideo = { enabled -> viewModel.toggleLocalVideo(enabled) },
+                onSwitchCamera = { viewModel.switchCamera() },
+                onEndCall = { viewModel.endCall(callState.activeThreadId) }
+            )
+        } else {
+            AudioCallScreen(
+                threadName = callState.activeCallPartyName ?: "Unknown",
+                callState = callState,
+                onToggleMute = { enabled -> viewModel.toggleLocalAudio(enabled) },
+                onToggleSpeaker = { enabled -> viewModel.toggleRemoteAudio(enabled) },
+                onEndCall = { viewModel.endCall(callState.activeThreadId) }
+            )
+        }
+    } else {
+        Scaffold(
+            topBar = {
+                // Hide top bar entirely when a chat thread is open - like WhatsApp
+                if (!(selectedTab == HomeTab.CHAT && viewModel.selectedChatThread != null)) {
+                    TopAppBar(
+                        title = {
+                            Column {
+                                Text("👨‍👩‍👧‍👦 Family Chat", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                                Text("${user.name} • ${user.role.name}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
+                            }
+                        },
+                        colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            titleContentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    )
+                }
+            },
+            bottomBar = {
+                // Hide bottom nav when a chat thread is open so keyboard can push layout up properly
+                if (!(selectedTab == HomeTab.CHAT && viewModel.selectedChatThread != null)) {
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.height(70.dp)
+                    ) {
+                        NavigationBarItem(
+                            selected = selectedTab == HomeTab.CHAT,
+                            onClick = { selectedTab = HomeTab.CHAT },
+                            icon = { Icon(Icons.Default.Chat, contentDescription = "Chat", modifier = Modifier.size(24.dp)) },
+                            label = { Text("💬 Chat", style = MaterialTheme.typography.labelSmall) }
+                        )
+                        NavigationBarItem(
+                            selected = selectedTab == HomeTab.SETTINGS,
+                            onClick = { selectedTab = HomeTab.SETTINGS },
+                            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(24.dp)) },
+                            label = { Text("⚙️ Settings", style = MaterialTheme.typography.labelSmall) }
                         )
                     }
-                )
-            } else if (
-                callState.status == CallStatus.REQUESTING ||
-                callState.status == CallStatus.CONNECTING ||
-                callState.status == CallStatus.ACTIVE
-            ) {
-                AudioCallScreen(
-                    threadName = callState.activeCallPartyName ?: "Unknown",
-                    callState = callState,
-                    onToggleMute = { enabled -> viewModel.toggleLocalAudio(enabled) },
-                    onToggleSpeaker = { enabled -> viewModel.toggleRemoteAudio(enabled) },
-                    onEndCall = { viewModel.endCall(callState.activeThreadId) }
-                )
+                }
+            }
+        ) { innerPadding ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.padding(innerPadding)) {
+                    when (selectedTab) {
+                        HomeTab.CHAT -> ChatScreen(
+                            viewModel = viewModel,
+                            onStartAudioCall = {
+                                runWithMicPermission {
+                                    viewModel.initiateCallForSelectedThread()
+                                }
+                            },
+                            onStartVideoCall = {
+                                runWithCallPermissions(needCamera = true) {
+                                    viewModel.initiateVideoCallForSelectedThread()
+                                }
+                            }
+                        )
+                        HomeTab.SETTINGS -> SettingsScreen(viewModel, user.role)
+                    }
+                }
+
+                if (callState.status == CallStatus.RINGING && callState.incomingCallRequest != null) {
+                    IncomingCallOverlay(
+                        callerName = callState.incomingCallRequest.fromUserName.ifBlank { "Unknown" },
+                        isVideoCall = callState.callType == CallType.VIDEO,
+                        onAccept = {
+                            runWithCallPermissions(needCamera = callState.callType == CallType.VIDEO) {
+                                viewModel.acceptCall(
+                                    callState.incomingCallRequest.callId,
+                                    callState.incomingCallRequest.threadId,
+                                    callState.incomingCallRequest.fromUserName
+                                )
+                            }
+                        },
+                        onReject = {
+                            viewModel.rejectCall(
+                                callState.incomingCallRequest.callId,
+                                callState.incomingCallRequest.threadId
+                            )
+                        }
+                    )
+                }
             }
         }
     }
@@ -663,7 +723,8 @@ private fun CalendarScreen(viewModel: FamilyViewModel, canEdit: Boolean) {
 @Composable
 private fun ChatScreen(
     viewModel: FamilyViewModel,
-    onStartAudioCall: () -> Unit
+    onStartAudioCall: () -> Unit,
+    onStartVideoCall: () -> Unit = {}
 ) {
     val onlineUsers by viewModel.onlineUsers.collectAsState(initial = emptyList())
     val selectedThread = viewModel.selectedChatThread
@@ -672,7 +733,6 @@ private fun ChatScreen(
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showAttachActions by remember { mutableStateOf(false) }
     var replyingToMessage by remember(selectedThread?.threadId) { mutableStateOf<ChatMessageData?>(null) }
-    var showVideoCall by remember { mutableStateOf(false) }
     val uploadProgress = viewModel.uploadProgress
     val uploadError = viewModel.uploadError
     val context = LocalContext.current
@@ -1000,7 +1060,7 @@ private fun ChatScreen(
                             Icon(Icons.Filled.Call, contentDescription = "Audio Call", tint = Color.White, modifier = Modifier.size(22.dp))
                         }
                         Button(
-                            onClick = { showVideoCall = true },
+                            onClick = { onStartVideoCall() },
                             modifier = Modifier.size(46.dp),
                             shape = RoundedCornerShape(50.dp),
                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(
@@ -1401,18 +1461,6 @@ private fun ChatScreen(
             }
         }
     }
-    
-    // Show video call screen if active
-    if (showVideoCall && selectedThread != null) {
-        VideoCallScreen(
-            threadName = if (selectedThread.participant1Mobile == viewModel.currentUser?.mobile)
-                selectedThread.participant2Name
-            else
-                selectedThread.participant1Name,
-            onEndCall = { showVideoCall = false }
-        )
-        return
-    }
 }
 
 @Composable
@@ -1630,6 +1678,7 @@ private fun formatCallDuration(durationMillis: Long): String {
 @Composable
 private fun IncomingCallOverlay(
     callerName: String,
+    isVideoCall: Boolean = false,
     onAccept: () -> Unit,
     onReject: () -> Unit
 ) {
@@ -1688,7 +1737,7 @@ private fun IncomingCallOverlay(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                "Incoming audio call",
+                "Incoming ${if (isVideoCall) "video" else "audio"} call",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Color(0xFFBDBDBD)
             )
@@ -1728,10 +1777,41 @@ private fun IncomingCallOverlay(
 }
 
 @Composable
-private fun VideoCallScreen(threadName: String, onEndCall: () -> Unit) {
+private fun VideoCallScreen(
+    threadName: String,
+    callState: com.familyconnect.app.webrtc.CallState,
+    webRTCManager: com.familyconnect.app.webrtc.WebRTCManager,
+    onToggleMute: (Boolean) -> Unit,
+    onToggleVideo: (Boolean) -> Unit,
+    onSwitchCamera: () -> Unit,
+    onEndCall: () -> Unit
+) {
+    val callStatus = when (callState.status) {
+        CallStatus.REQUESTING -> "Ringing..."
+        CallStatus.RINGING -> "Incoming video call"
+        CallStatus.CONNECTING -> "Connecting..."
+        CallStatus.ACTIVE -> formatCallDuration(callState.callDuration)
+        CallStatus.ENDED -> "Call ended"
+        else -> "Waiting..."
+    }
+
+    // Track whether the remote video has arrived so we can trigger recomposition
+    var hasRemoteVideo by remember { mutableStateOf(webRTCManager.remoteVideoTrack != null) }
+
+    // Listen for remote video track arriving asynchronously
+    DisposableEffect(Unit) {
+        val previous = webRTCManager.onRemoteVideoTrackReceived
+        webRTCManager.onRemoteVideoTrackReceived = { _ ->
+            hasRemoteVideo = true
+        }
+        onDispose {
+            webRTCManager.onRemoteVideoTrackReceived = previous
+        }
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = Color.Black
     ) {
         Column(
             modifier = Modifier.fillMaxSize()
@@ -1741,104 +1821,202 @@ private fun VideoCallScreen(threadName: String, onEndCall: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .background(MaterialTheme.colorScheme.surfaceDim)
+                    .background(Color(0xFF1A1A1A))
             ) {
-                // Main video stream
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        "📹",
-                        fontSize = 80.sp,
-                        modifier = Modifier.padding(32.dp)
-                    )
-                    Text(
-                        "Video stream from $threadName",
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center
-                    )
+                // Remote video – use remember + DisposableEffect so init/release happen exactly once
+                val remoteRendererRef = remember { mutableStateOf<org.webrtc.SurfaceViewRenderer?>(null) }
+                androidx.compose.ui.viewinterop.AndroidView(
+                    factory = { ctx ->
+                        org.webrtc.SurfaceViewRenderer(ctx).also { renderer ->
+                            webRTCManager.initRemoteRenderer(renderer)
+                            remoteRendererRef.value = renderer
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+                // Clean up remote renderer when composable leaves
+                DisposableEffect(Unit) {
+                    onDispose {
+                        webRTCManager.releaseRemoteRenderer()
+                    }
                 }
-                
-                // Your video preview in corner
-                Card(
-                    modifier = Modifier
-                        .size(120.dp, 160.dp)
-                        .align(Alignment.BottomEnd)
-                        .padding(12.dp),
-                    colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                ) {
+
+                // Status overlay when not connected yet
+                if (callState.status != CallStatus.ACTIVE) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(4.dp),
+                            .background(Color(0xCC000000))
+                            .padding(24.dp),
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("You", style = MaterialTheme.typography.labelSmall)
+                        Icon(
+                            Icons.Filled.VideoCall,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            threadName,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            callStatus,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = Color(0xFFBDBDBD)
+                        )
+                    }
+                }
+
+                // Local video preview in corner
+                if (callState.localVideoEnabled) {
+                    Card(
+                        modifier = Modifier
+                            .size(120.dp, 160.dp)
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = Color(0xFF333333)
+                        )
+                    ) {
+                        val localRendererRef = remember { mutableStateOf<org.webrtc.SurfaceViewRenderer?>(null) }
+                        androidx.compose.ui.viewinterop.AndroidView(
+                            factory = { ctx ->
+                                org.webrtc.SurfaceViewRenderer(ctx).also { renderer ->
+                                    webRTCManager.initLocalRenderer(renderer)
+                                    localRendererRef.value = renderer
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        DisposableEffect(Unit) {
+                            onDispose {
+                                webRTCManager.releaseLocalRenderer()
+                            }
+                        }
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier
+                            .size(120.dp, 160.dp)
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = Color(0xFF333333)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(4.dp),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
+                            Text("Camera Off", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                        }
+                    }
+                }
+
+                // Call duration / status bar at top
+                if (callState.status == CallStatus.ACTIVE) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(12.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0x99000000)
+                    ) {
+                        Text(
+                            callStatus,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
-            
-            // Call controls
-            Card(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                Column(
+
+            // Call controls bar
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF1A1A1A)
+            ) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(horizontal = 16.dp, vertical = 20.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "Video Call with $threadName",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    )
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
+                    // Mute
+                    Button(
+                        onClick = { onToggleMute(!callState.localAudioEnabled) },
+                        modifier = Modifier.size(56.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = if (!callState.localAudioEnabled) Color(0xFFE53935) else Color(0xFF424242)
+                        ),
+                        shape = RoundedCornerShape(28.dp),
+                        contentPadding = PaddingValues(0.dp)
                     ) {
-                        Button(
-                            onClick = { /* Mute audio */ },
-                            modifier = Modifier.size(48.dp),
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Icon(Icons.Filled.MicOff, contentDescription = "Mute", modifier = Modifier.size(20.dp))
-                        }
-                        
-                        Button(
-                            onClick = { /* Flip camera */ },
-                            modifier = Modifier.size(48.dp),
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Flip Camera", modifier = Modifier.size(20.dp))
-                        }
-                        
-                        Button(
-                            onClick = onEndCall,
-                            modifier = Modifier.size(48.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error
-                            ),
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Icon(Icons.Filled.CallEnd, contentDescription = "End Call", modifier = Modifier.size(20.dp))
-                        }
-                        
-                        Button(
-                            onClick = { /* Speaker on/off */ },
-                            modifier = Modifier.size(48.dp),
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Icon(Icons.Filled.VolumeUp, contentDescription = "Speaker", modifier = Modifier.size(20.dp))
-                        }
+                        Icon(
+                            if (!callState.localAudioEnabled) Icons.Filled.MicOff else Icons.Filled.Mic,
+                            contentDescription = "Mute",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    // Toggle camera on/off
+                    Button(
+                        onClick = { onToggleVideo(!callState.localVideoEnabled) },
+                        modifier = Modifier.size(56.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = if (!callState.localVideoEnabled) Color(0xFFE53935) else Color(0xFF424242)
+                        ),
+                        shape = RoundedCornerShape(28.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.VideoCall,
+                            contentDescription = "Toggle Video",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    // Flip camera
+                    Button(
+                        onClick = { onSwitchCamera() },
+                        modifier = Modifier.size(56.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF424242)
+                        ),
+                        shape = RoundedCornerShape(28.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Switch Camera", tint = Color.White, modifier = Modifier.size(24.dp))
+                    }
+
+                    // End call
+                    Button(
+                        onClick = onEndCall,
+                        modifier = Modifier.size(64.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFE53935)
+                        ),
+                        shape = RoundedCornerShape(32.dp),
+                        contentPadding = PaddingValues(0.dp),
+                        elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(defaultElevation = 8.dp)
+                    ) {
+                        Icon(Icons.Filled.CallEnd, contentDescription = "End Call", tint = Color.White, modifier = Modifier.size(28.dp))
                     }
                 }
             }

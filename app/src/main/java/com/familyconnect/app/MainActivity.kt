@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
         maybeRequestNotificationPermission()
         maybeRequestFilePermissions()
         maybeRequestAudioPermissions()
+        maybeRequestCameraPermission()
         val app = application as FamilyConnectApp
         setContent {
             FamilyConnectTheme {
@@ -76,6 +77,15 @@ class MainActivity : ComponentActivity() {
             val permission = Manifest.permission.RECORD_AUDIO
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(permission), 1003)
+            }
+        }
+    }
+
+    private fun maybeRequestCameraPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val permission = Manifest.permission.CAMERA
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(permission), 1004)
             }
         }
     }
