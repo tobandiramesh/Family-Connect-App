@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Mic
@@ -336,6 +337,28 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
             pendingCallAction.value?.invoke()
         }
         pendingCallAction.value = null
+    }
+
+    // Location permission for attaching city name to messages
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            viewModel.refreshLocation()
+        }
+    }
+
+    // Request location on first composition
+    LaunchedEffect(Unit) {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasPermission) {
+            viewModel.refreshLocation()
+        } else {
+            locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
     }
 
     fun runWithMicPermission(action: () -> Unit) {
@@ -1237,14 +1260,46 @@ private fun ChatScreen(
                                         }
                                     }
                                 }
-                                Text(
-                                    viewModel.formatTime(message.timestamp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (isCurrentUser)
-                                        MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
-                                    else
-                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        viewModel.formatTime(message.timestamp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isCurrentUser)
+                                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
+                                        else
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                    if (!message.senderLocation.isNullOrBlank()) {
+                                        Text(
+                                            "•",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isCurrentUser)
+                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.4f)
+                                            else
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                        )
+                                        Icon(
+                                            Icons.Filled.LocationOn,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(10.dp),
+                                            tint = if (isCurrentUser)
+                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
+                                            else
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                        Text(
+                                            message.senderLocation,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isCurrentUser)
+                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
+                                            else
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

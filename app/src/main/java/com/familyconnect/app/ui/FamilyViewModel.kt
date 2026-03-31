@@ -1,6 +1,7 @@
 package com.familyconnect.app.ui
 
 import android.content.Context
+import android.location.Geocoder
 import android.net.Uri
 import android.util.Log
 import androidx.compose.runtime.getValue
@@ -25,6 +26,9 @@ import com.familyconnect.app.webrtc.CallStatus
 import com.familyconnect.app.webrtc.CallState
 import com.familyconnect.app.webrtc.CallType
 import com.familyconnect.app.webrtc.WebRTCManager
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
@@ -34,6 +38,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
@@ -46,8 +51,46 @@ class FamilyViewModel(
     private val eventExpiryWindowMillis = TimeUnit.DAYS.toMillis(3)
     private var previousMessageIds = setOf<String>()
     private val webRTCManager = WebRTCManager(context)
+    private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+
+    /** Cached city/locality name resolved from the last known location. */
+    var lastKnownLocation by mutableStateOf<String?>(null)
+        private set
 
     fun getWebRTCManager(): WebRTCManager = webRTCManager
+
+    /**
+     * Refresh the cached location name. Call this when location permission is granted.
+     * Uses coarse/fine location to get a city name via Geocoder.
+     */
+    @android.annotation.SuppressLint("MissingPermission")
+    fun refreshLocation() {
+        try {
+            fusedLocationClient.getCurrentLocation(
+                Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                CancellationTokenSource().token
+            ).addOnSuccessListener { location ->
+                if (location != null) {
+                    try {
+                        @Suppress("DEPRECATION")
+                        val addresses = Geocoder(context, java.util.Locale.getDefault())
+                            .getFromLocation(location.latitude, location.longitude, 1)
+                        val addr = addresses?.firstOrNull()
+                        val area = addr?.subLocality ?: addr?.thoroughfare
+                        val city = addr?.locality ?: addr?.subAdminArea ?: addr?.adminArea
+                        val locationText = listOfNotNull(area, city).distinct().joinToString(", ")
+                        if (locationText.isNotBlank()) {
+                            lastKnownLocation = locationText
+                        }
+                    } catch (e: Exception) {
+                        Log.e("FamilyViewModel", "Geocoder error: ${e.message}")
+                    }
+                }
+            }
+        } catch (e: SecurityException) {
+            Log.e("FamilyViewModel", "Location permission not granted: ${e.message}")
+        }
+    }
 
     var currentUser by mutableStateOf<UserProfile?>(null)
         private set
@@ -152,6 +195,23 @@ class FamilyViewModel(
         viewModelScope.launch {
             repository.seedDefaultUsers()
         }
+        // Auto-restore session from DataStore
+        viewModelScope.launch {
+            repository.loggedInMobileFlow.first().let { savedMobile ->
+                if (!savedMobile.isNullOrBlank()) {
+                    val result = repository.loginByMobile(savedMobile)
+                    if (result != null) {
+                        currentUser = result
+                        repository.setUserOnline(result.mobile, result.name)
+                        startObservingIncomingCalls()
+                        refreshLocation()
+                        repository.observeUserChatThreads(result.mobile).collect { threads ->
+                            _userChatThreadsFlow.value = threads
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun login() {
@@ -160,6 +220,7 @@ class FamilyViewModel(
             if (result != null) {
                 currentUser = result
                 loginError = null
+                repository.saveLoggedInMobile(result.mobile)
                 // Set user as online in Firebase
                 repository.setUserOnline(result.mobile, result.name)
                 startObservingIncomingCalls()
@@ -200,6 +261,9 @@ class FamilyViewModel(
     fun logout() {
         currentUser?.let {
             repository.setUserOffline(it.mobile, it.name)
+        }
+        viewModelScope.launch {
+            repository.clearLoggedInMobile()
         }
         currentUser = null
         selectedChatThread = null
@@ -302,7 +366,8 @@ class FamilyViewModel(
             replyToMessageId = replyTo?.messageId,
             replyToSenderName = replyTo?.senderName,
             replyToBody = replyTo?.body,
-            recipientMobile = recipientMobile
+            recipientMobile = recipientMobile,
+            senderLocation = lastKnownLocation
         ) { success ->
             if (!success) {
                 // Handle error

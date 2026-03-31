@@ -87,6 +87,7 @@ dependencies {
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("io.github.webrtc-sdk:android:125.6422.07")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
     
     // Media/Audio APIs (built into Android, no external dependency needed)
     

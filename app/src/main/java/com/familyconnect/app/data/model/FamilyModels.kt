@@ -59,7 +59,8 @@ data class ChatMessageData(
     val mediaUri: String? = null,
     val replyToMessageId: String? = null,
     val replyToSenderName: String? = null,
-    val replyToBody: String? = null
+    val replyToBody: String? = null,
+    val senderLocation: String? = null
 )
 
 data class OnlineUser(

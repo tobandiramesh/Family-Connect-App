@@ -171,6 +171,7 @@ object FirebaseService {
         replyToSenderName: String? = null,
         replyToBody: String? = null,
         recipientMobile: String? = null,
+        senderLocation: String? = null,
         onResult: (Boolean) -> Unit
     ) {
         try {
@@ -187,7 +188,8 @@ object FirebaseService {
                 "mediaUri" to (mediaUri ?: ""),
                 "replyToMessageId" to (replyToMessageId ?: ""),
                 "replyToSenderName" to (replyToSenderName ?: ""),
-                "replyToBody" to (replyToBody ?: "")
+                "replyToBody" to (replyToBody ?: ""),
+                "senderLocation" to (senderLocation ?: "")
             )
             
             val messagesRef = database.getReference("$MESSAGES_PATH/$threadId/$messageId")
@@ -238,6 +240,7 @@ object FirebaseService {
                             val replyToMessageId = (msgSnapshot.child("replyToMessageId").value as? String).orEmpty().ifBlank { null }
                             val replyToSenderName = (msgSnapshot.child("replyToSenderName").value as? String).orEmpty().ifBlank { null }
                             val replyToBody = (msgSnapshot.child("replyToBody").value as? String).orEmpty().ifBlank { null }
+                            val senderLocation = (msgSnapshot.child("senderLocation").value as? String).orEmpty().ifBlank { null }
                             
                             messages.add(
                                 ChatMessageData(
@@ -250,7 +253,8 @@ object FirebaseService {
                                     mediaUri = mediaUri,
                                     replyToMessageId = replyToMessageId,
                                     replyToSenderName = replyToSenderName,
-                                    replyToBody = replyToBody
+                                    replyToBody = replyToBody,
+                                    senderLocation = senderLocation
                                 )
                             )
                         }

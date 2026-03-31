@@ -70,6 +70,17 @@ class FamilyRepository(
     val adminSetupPinFlow: Flow<String> =
         context.dataStore.data.map { it[ADMIN_SETUP_PIN_KEY] ?: DEFAULT_ADMIN_SETUP_PIN }
 
+    val loggedInMobileFlow: Flow<String?> =
+        context.dataStore.data.map { it[LOGGED_IN_MOBILE_KEY] }
+
+    suspend fun saveLoggedInMobile(mobile: String) {
+        context.dataStore.edit { it[LOGGED_IN_MOBILE_KEY] = mobile }
+    }
+
+    suspend fun clearLoggedInMobile() {
+        context.dataStore.edit { it.remove(LOGGED_IN_MOBILE_KEY) }
+    }
+
     val usersFlow: Flow<List<UserProfile>> = userDao.observeUsers().map { list ->
         list.map {
             UserProfile(
@@ -217,6 +228,7 @@ class FamilyRepository(
         replyToSenderName: String? = null,
         replyToBody: String? = null,
         recipientMobile: String? = null,
+        senderLocation: String? = null,
         onResult: (Boolean) -> Unit
     ) {
         FirebaseService.sendMessage(
@@ -229,6 +241,7 @@ class FamilyRepository(
             replyToSenderName = replyToSenderName,
             replyToBody = replyToBody,
             recipientMobile = recipientMobile,
+            senderLocation = senderLocation,
             onResult = onResult
         )
     }
@@ -305,5 +318,6 @@ class FamilyRepository(
         val DARK_MODE_KEY = booleanPreferencesKey("dark_mode")
         val LARGE_TEXT_KEY = booleanPreferencesKey("large_text")
         val LANGUAGE_KEY = stringPreferencesKey("language")
+        val LOGGED_IN_MOBILE_KEY = stringPreferencesKey("logged_in_mobile")
     }
 }
