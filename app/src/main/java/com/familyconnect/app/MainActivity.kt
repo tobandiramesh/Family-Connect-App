@@ -23,51 +23,98 @@ class MainActivity : ComponentActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d("MainActivity", "=== onCreate called ===")
+        Log.d("MainActivity", "Intent action: ${intent.action}")
+        Log.d("MainActivity", "Intent extras keys: ${intent.extras?.keySet()}")
+        
+        // CRITICAL: Extract and store call data BEFORE rendering UI
+        extractAndStorePendingCall(intent)
+        
         maybeRequestNotificationPermission()
         maybeRequestFilePermissions()
         maybeRequestAudioPermissions()
         maybeRequestCameraPermission()
+        
+        // Ensure window is visible when launched from notification
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                       android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        
         val app = application as FamilyConnectApp
+        
+        Log.d("MainActivity", "Setting Compose content...")
         setContent {
             FamilyConnectTheme {
                 Root(app = app) { vm ->
+                    Log.d("MainActivity", "✅ ViewModel created and ready")
                     viewModelInstance = vm
+                    
+                    // Now process the pending call with the ready ViewModel
+                    processPendingCall(vm)
                 }
             }
         }
-        // Handle call intent if app was launched with notification
-        handleCallIntent(intent)
+        Log.d("MainActivity", "Compose content set")
+    }
+    
+    private fun extractAndStorePendingCall(intent: Intent?) {
+        if (intent == null) return
+        
+        val callId = intent.getStringExtra(NotificationHelper.EXTRA_CALL_ID)
+        val threadId = intent.getStringExtra(NotificationHelper.EXTRA_THREAD_ID)
+        val callerName = intent.getStringExtra(NotificationHelper.EXTRA_CALLER_NAME)
+        
+        Log.d("MainActivity", "extractAndStorePendingCall: callId=$callId, threadId=$threadId, callerName=$callerName")
+        
+        if (callId.isNullOrBlank() || threadId.isNullOrBlank()) {
+            Log.w("MainActivity", "❌ Missing call data in intent!")
+            return
+        }
+        
+        Log.d("MainActivity", "🔔 EXTRACT: Storing pending call for UI: $callId from $callerName")
+        val app = application as FamilyConnectApp
+        app.pendingCallIntent = PendingCallIntent(callId, threadId, callerName ?: "User")
+        
+        // Clear from intent so it doesn't re-trigger
+        intent.removeExtra(NotificationHelper.EXTRA_CALL_ID)
+        intent.removeExtra(NotificationHelper.EXTRA_THREAD_ID)
+        intent.removeExtra(NotificationHelper.EXTRA_CALLER_NAME)
+    }
+    
+    private fun processPendingCall(viewModel: FamilyViewModel) {
+        val app = application as FamilyConnectApp
+        val pendingCall = app.pendingCallIntent
+        
+        if (pendingCall != null) {
+            Log.d("MainActivity", "✅ PROCESS: Found pending call: ${pendingCall.callId}")
+            app.pendingCallIntent = null // Clear so we don't process it again
+            
+            NotificationHelper.cancelCallNotification(this)
+            
+            Log.d("MainActivity", "📞 Calling viewModel.acceptCall(${pendingCall.callId})")
+            viewModel.acceptCall(pendingCall.callId, pendingCall.threadId, pendingCall.callerName)
+            Log.d("MainActivity", "✅ acceptCall completed. callState.status = ${viewModel.callState.status}")
+        } else {
+            Log.d("MainActivity", "ℹ️ No pending call to process (might be coming from LaunchedEffect)")
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // Handle call intent when activity already exists (singleTop)
-        handleCallIntent(intent)
-    }
-
-    private fun handleCallIntent(intent: Intent?) {
-        if (intent == null) return
-        val callId = intent.getStringExtra(NotificationHelper.EXTRA_CALL_ID) ?: return
-        val threadId = intent.getStringExtra(NotificationHelper.EXTRA_THREAD_ID) ?: return
-        val callerName = intent.getStringExtra(NotificationHelper.EXTRA_CALLER_NAME) ?: "User"
-        val action = intent.getStringExtra("action") ?: ""
-
-        Log.d("MainActivity", "Handling call intent: callId=$callId, action=$action")
-        NotificationHelper.cancelCallNotification(this)
-
-        // Only proceed if ViewModel is ready
-        val vm = viewModelInstance ?: return
+        Log.d("MainActivity", "🔄 onNewIntent called with action: ${intent.action}")
+        Log.d("MainActivity", "   Extras: ${intent.extras?.keySet()}")
         
-        if (action == "accept_call") {
-            vm.acceptCall(callId, threadId, callerName)
+        // Always try to extract and process
+        extractAndStorePendingCall(intent)
+        
+        // If we have ViewModel, process immediately
+        val vm = viewModelInstance
+        if (vm != null) {
+            Log.d("MainActivity", "✅ ViewModel available, processing immediately")
+            processPendingCall(vm)
+        } else {
+            Log.d("MainActivity", "⚠️ ViewModel not ready yet, will process in LaunchedEffect")
         }
-
-        // Clear the extras so they don't re-trigger on config change
-        intent.removeExtra(NotificationHelper.EXTRA_CALL_ID)
-        intent.removeExtra(NotificationHelper.EXTRA_THREAD_ID)
-        intent.removeExtra(NotificationHelper.EXTRA_CALLER_NAME)
-        intent.removeExtra("action")
     }
     
     override fun onDestroy() {

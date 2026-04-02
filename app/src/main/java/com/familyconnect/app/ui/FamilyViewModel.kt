@@ -495,6 +495,20 @@ class FamilyViewModel(
         }?.unreadCount ?: 0
     }
 
+    fun getLastMessageForUser(userMobile: String): String {
+        val current = currentUser ?: return ""
+        return userChatThreads.value.find { thread ->
+            (thread.participant1Mobile == current.mobile && thread.participant2Mobile == userMobile) ||
+            (thread.participant2Mobile == current.mobile && thread.participant1Mobile == userMobile)
+        }?.lastMessage?.take(50) ?: ""
+    }
+
+    fun isUserTyping(userMobile: String): Boolean {
+        // This will be set when we receive typing indicator from Firebase
+        // For now, return false as placeholder - will be updated with real data
+        return false
+    }
+
     fun addEvent(title: String, dateTime: String, colorTag: String, recurring: Boolean, reminderMinutes: Int) {
         viewModelScope.launch {
             val id = (events.value.maxOfOrNull { it.id } ?: 0) + 1
@@ -873,40 +887,51 @@ class FamilyViewModel(
     }
 
     fun acceptCall(callId: String, threadId: String, fromUserNameOverride: String? = null) {
+        Log.d("FamilyViewModel", "📞 acceptCall invoked: callId=$callId, threadId=$threadId, currentUser=${currentUser?.mobile}")
+        
+        // Update call state immediately, don't wait for currentUser
+        val fromUserName =
+            fromUserNameOverride
+                ?: callState.incomingCallRequest?.fromUserName
+                ?: incomingCallRequests.value.firstOrNull {
+                    (it["callId"] as? String ?: "") == callId
+                }?.get("fromUserName") as? String
+                ?: "User"
+
+        incomingActionInProgress = true
+        callState = callState.copy(
+            status = CallStatus.CONNECTING,
+            incomingCallRequest = null,
+            activeCallId = callId,
+            activeThreadId = threadId,
+            activeCallPartyName = fromUserName,
+            isCallConnected = false,
+            callDuration = 0
+        )
+        Log.d("FamilyViewModel", "✅ Call state updated to CONNECTING. callState.status=${callState.status}")
+
+        // Now handle the rest asynchronously
         currentUser?.let {
             viewModelScope.launch {
-                val fromUserName =
-                    fromUserNameOverride
-                        ?: callState.incomingCallRequest?.fromUserName
-                        ?: incomingCallRequests.value.firstOrNull {
-                            (it["callId"] as? String ?: "") == callId
-                        }?.get("fromUserName") as? String
-                        ?: "User"
-
-                incomingActionInProgress = true
-                callState = callState.copy(
-                    status = CallStatus.CONNECTING,
-                    incomingCallRequest = null,
-                    activeCallId = callId,
-                    activeThreadId = threadId,
-                    activeCallPartyName = fromUserName,
-                    isCallConnected = false,
-                    callDuration = 0
-                )
-
+                Log.d("FamilyViewModel", "🔐 User is authenticated, updating Firebase...")
                 repository.updateCallStatus(threadId, callId, "accepted") { success ->
                     incomingActionInProgress = false
                     if (success) {
+                        Log.d("FamilyViewModel", "✅ Firebase call status updated to accepted")
                         _incomingCallRequests.value = incomingCallRequests.value.filter {
                             (it["callId"] as? String ?: "") != callId
                         }
                         initializeWebRtcSession(threadId, callId, isCaller = false)
                         observeActiveCall(callId, threadId, isCaller = false)
                     } else {
+                        Log.e("FamilyViewModel", "❌ Failed to update call status in Firebase")
                         resetCallState()
                     }
                 }
             }
+        } ?: run {
+            Log.w("FamilyViewModel", "⚠️ User not authenticated yet. Will update Firebase after login.")
+            incomingActionInProgress = false
         }
     }
 

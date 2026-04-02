@@ -127,14 +127,31 @@ object NotificationHelper {
         callerName: String,
         callType: String
     ) {
+        // Create intent that launches MainActivity with call data
         val launchIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_FROM_BACKGROUND
             putExtra(EXTRA_CALL_ID, callId)
             putExtra(EXTRA_THREAD_ID, threadId)
             putExtra(EXTRA_CALLER_NAME, callerName)
+            putExtra("action", "incoming_call")
         }
+        
+        // Pending intent for full-screen display (lock screen)
         val fullScreenIntent = PendingIntent.getActivity(
-            context, CALL_NOTIFICATION_ID, launchIntent,
+            context, 
+            callId.hashCode(), 
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        // Pending intent for tapping the notification body
+        val contentIntent = PendingIntent.getActivity(
+            context,
+            callId.hashCode() + 100,
+            launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -145,7 +162,7 @@ object NotificationHelper {
             putExtra(EXTRA_CALLER_NAME, callerName)
         }
         val acceptPendingIntent = PendingIntent.getBroadcast(
-            context, 1, acceptIntent,
+            context, callId.hashCode() + 1000, acceptIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -155,7 +172,7 @@ object NotificationHelper {
             putExtra(EXTRA_THREAD_ID, threadId)
         }
         val rejectPendingIntent = PendingIntent.getBroadcast(
-            context, 2, rejectIntent,
+            context, callId.hashCode() + 2000, rejectIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -165,18 +182,28 @@ object NotificationHelper {
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setContentTitle(callLabel)
             .setContentText("$callerName is calling...")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$callerName is calling you"))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setAutoCancel(false)
+            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
+            .setVibrate(longArrayOf(0, 1000, 500, 1000, 500, 1000))
             .setFullScreenIntent(fullScreenIntent, true)
+            .setContentIntent(contentIntent)  // ✅ THIS WAS MISSING - handles tapping the notification
             .addAction(android.R.drawable.ic_menu_call, "Accept", acceptPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Reject", rejectPendingIntent)
+            .setColorized(true)
+            .setColor(0xFF6366F1.toInt())
             .build()
 
+        android.util.Log.d("NotificationHelper", "🔔 POSTING CALL NOTIFICATION: callId=$callId, callerName=$callerName")
         runCatching {
             NotificationManagerCompat.from(context).notify(CALL_NOTIFICATION_ID, notification)
+            android.util.Log.d("NotificationHelper", "✅ Notification posted successfully")
+        }.onFailure {
+            android.util.Log.e("NotificationHelper", "❌ Failed to post notification: ${it.message}")
         }
     }
 

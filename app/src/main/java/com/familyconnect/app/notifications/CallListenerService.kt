@@ -3,7 +3,9 @@ package com.familyconnect.app.notifications
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.firebase.database.DataSnapshot
@@ -36,21 +38,62 @@ class CallListenerService : Service() {
         }
     }
 
-    private val database = FirebaseDatabase.getInstance()
+    private lateinit var database: FirebaseDatabase
     private var callListener: ValueEventListener? = null
     private var messageListener: ValueEventListener? = null
     private var userMobile: String = ""
     private var userName: String = ""
+    private var wakeLock: PowerManager.WakeLock? = null
 
     // Track which call/message IDs we've already shown notifications for
     private val notifiedCallIds = mutableSetOf<String>()
     private val notifiedMessageIds = mutableSetOf<String>()
+    
+    // Keep strong references to database paths
+    private var chatsRef: com.google.firebase.database.DatabaseReference? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "onCreate: Initializing service")
+        
+        // Initialize Firebase with persistence enabled
+        try {
+            database = FirebaseDatabase.getInstance()
+            database.setPersistenceEnabled(true)
+            Log.d(TAG, "✅ Firebase persistence enabled")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error enabling persistence: ${e.message}")
+            database = FirebaseDatabase.getInstance()
+        }
+        
         NotificationHelper.ensureChannel(this)
+        acquireWakeLock()
+    }
+    
+    private fun acquireWakeLock() {
+        try {
+            if (wakeLock == null) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "FamilyConnect::CallListener")
+                wakeLock?.acquire(10 * 60 * 1000L) // 10 minutes
+                Log.d(TAG, "🔋 Wake lock acquired")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error acquiring wake lock: ${e.message}")
+        }
+    }
+    
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+                Log.d(TAG, "🔋 Wake lock released")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing wake lock: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -58,13 +101,19 @@ class CallListenerService : Service() {
             userMobile = intent?.getStringExtra(EXTRA_USER_MOBILE) ?: ""
             userName = intent?.getStringExtra(EXTRA_USER_NAME) ?: ""
 
+            Log.d(TAG, "🚀 onStartCommand called for user: $userMobile, flags=$flags, startId=$startId")
+
             if (userMobile.isBlank()) {
-                Log.w(TAG, "No user mobile provided, stopping service")
+                Log.w(TAG, "❌ No user mobile provided, stopping service")
                 stopSelf()
                 return START_NOT_STICKY
             }
 
-            Log.d(TAG, "Starting CallListenerService for user: $userMobile")
+            // Renew wake lock on every call
+            releaseWakeLock()
+            acquireWakeLock()
+            
+            Log.d(TAG, "✅ Starting CallListenerService for user: $userMobile")
 
             try {
                 // Ensure notification channels exist
@@ -74,33 +123,38 @@ class CallListenerService : Service() {
                 val notification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_SERVICE)
                     .setSmallIcon(android.R.drawable.ic_menu_my_calendar)
                     .setContentTitle("Family Connect")
-                    .setContentText("Listening for calls and messages")
+                    .setContentText("📱 Listening for calls ($userMobile)")
                     .setPriority(NotificationCompat.PRIORITY_LOW)
                     .setOngoing(true)
                     .setSilent(true)
+                    .setShowWhen(false)
                     .build()
 
                 startForeground(FOREGROUND_ID, notification)
-                Log.d(TAG, "Foreground service started with notification")
+                Log.d(TAG, "✅ Foreground service notification updated")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to start foreground service", e)
-                // Try to stop and restart gracefully
+                Log.e(TAG, "❌ Failed to start foreground service: ${e.message}", e)
                 stopSelf()
                 return START_NOT_STICKY
             }
 
             try {
+                // Get fresh database reference each time
+                chatsRef = database.getReference("chats")
+                chatsRef?.keepSynced(true) // Keep data synced even in background
+                
                 // Start listening for incoming calls and messages
                 startCallListener()
                 startMessageListener()
-                Log.d(TAG, "Listeners started successfully")
+                Log.d(TAG, "✅ Listeners started successfully")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to start listeners", e)
+                Log.e(TAG, "❌ Failed to start listeners: ${e.message}", e)
             }
 
+            Log.d(TAG, "Service will restart if killed: START_STICKY")
             START_STICKY  // Restart service if killed
         } catch (e: Exception) {
-            Log.e(TAG, "Critical error in onStartCommand", e)
+            Log.e(TAG, "❌ Critical error in onStartCommand: ${e.message}", e)
             stopSelf()
             START_NOT_STICKY
         }
@@ -117,14 +171,18 @@ class CallListenerService : Service() {
 
     private fun startCallListener() {
         callListener?.let {
-            database.getReference("chats").removeEventListener(it)
+            chatsRef?.removeEventListener(it)
         }
 
         val normalizedMobile = normalizeMobile(userMobile)
-        val chatsRef = database.getReference("chats")
+        if (chatsRef == null) {
+            chatsRef = database.getReference("chats")
+            chatsRef?.keepSynced(true)
+        }
 
         callListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
+                Log.d(TAG, "\n=== CALL LISTENER FIRED ===")
                 for (threadSnapshot in snapshot.children) {
                     for (callSnapshot in threadSnapshot.child("callRequests").children) {
                         val callId = (callSnapshot.child("callId").value as? String)
@@ -139,6 +197,12 @@ class CallListenerService : Service() {
                         val callType = callSnapshot.child("callType").value as? String ?: "audio"
                         val createdAt = callSnapshot.child("createdAt").value as? Long ?: 0L
 
+                        Log.d(TAG, "➡️ Found call: callId=$callId, to=$toUserId, status=$status, from=$fromUserName")
+                        Log.d(TAG, "   toUserId match: ${sameMobile(toUserId, normalizedMobile)}, normalizedMobile=$normalizedMobile")
+                        Log.d(TAG, "   status==pending: ${status == "pending"}, callId valid: ${callId.isNotBlank()}, already notified: ${callId in notifiedCallIds}")
+                        val ageMs = System.currentTimeMillis() - createdAt
+                        Log.d(TAG, "   age: ${ageMs}ms (< 60s: ${ageMs < 60_000})")
+
                         // Only process pending calls for this user, and not too old (within 60s)
                         if (sameMobile(toUserId, normalizedMobile)
                             && status == "pending"
@@ -147,7 +211,7 @@ class CallListenerService : Service() {
                             && (System.currentTimeMillis() - createdAt) < 60_000
                         ) {
                             notifiedCallIds.add(callId)
-                            Log.d(TAG, "Incoming call detected: $callId from $fromUserName")
+                            Log.d(TAG, "\n🔔 POSTING NOTIFICATION for: $callId from $fromUserName")
 
                             NotificationHelper.postIncomingCallNotification(
                                 context = this@CallListenerService,
@@ -156,6 +220,7 @@ class CallListenerService : Service() {
                                 callerName = fromUserName,
                                 callType = callType
                             )
+                            Log.d(TAG, "✅ Notification posted successfully\n")
                         }
                     }
                 }
@@ -166,16 +231,23 @@ class CallListenerService : Service() {
             }
         }
 
-        chatsRef.addValueEventListener(callListener!!)
-        Log.d(TAG, "Call listener registered for $userMobile")
+        try {
+            chatsRef?.addValueEventListener(callListener!!)
+            Log.d(TAG, "✅ Call listener registered for $userMobile")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to add call listener: ${e.message}", e)
+        }
     }
 
     private fun startMessageListener() {
         messageListener?.let {
-            database.getReference("chats").removeEventListener(it)
+            chatsRef?.removeEventListener(it)
         }
 
-        val chatsRef = database.getReference("chats")
+        if (chatsRef == null) {
+            chatsRef = database.getReference("chats")
+            chatsRef?.keepSynced(true)
+        }
 
         messageListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -225,21 +297,27 @@ class CallListenerService : Service() {
             }
         }
 
-        chatsRef.addValueEventListener(messageListener!!)
-        Log.d(TAG, "Message listener registered for $userMobile")
+        try {
+            chatsRef?.addValueEventListener(messageListener!!)
+            Log.d(TAG, "✅ Message listener registered for $userMobile")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to add message listener: ${e.message}", e)
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "CallListenerService destroyed")
+        Log.d(TAG, "⚠️ CallListenerService destroyed - will restart due to START_STICKY")
 
         callListener?.let {
-            database.getReference("chats").removeEventListener(it)
+            chatsRef?.removeEventListener(it)
         }
         messageListener?.let {
-            database.getReference("chats").removeEventListener(it)
+            chatsRef?.removeEventListener(it)
         }
         callListener = null
+        messageListener = null
+        releaseWakeLock()
         messageListener = null
         
         // Schedule service restart if it was killed unexpectedly

@@ -72,6 +72,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -138,12 +139,82 @@ fun Root(app: Application, onViewModelReady: (FamilyViewModel) -> Unit = {}) {
 @Composable
 fun FamilyConnectRoot(viewModel: FamilyViewModel) {
     val darkMode by viewModel.darkMode.collectAsState(initial = false)
+    val callState = viewModel.callState
+    val context = LocalContext.current
+    
+    // Use key to force recomposition when call state changes
+    val callKey = "${callState.activeCallId}_${callState.status}"
+    
+    // Check for pending call from notification on first composition
+    LaunchedEffect(Unit) {
+        val app = context.applicationContext as com.familyconnect.app.FamilyConnectApp
+        val pendingCall = app.pendingCallIntent
+        if (pendingCall != null) {
+            Log.d("FamilyConnectRoot", "🔔 LaunchedEffect: PENDING CALL DETECTED: ${pendingCall.callId}")
+            Log.d("FamilyConnectRoot", "   Clearing pending call and accepting...")
+            app.pendingCallIntent = null
+            viewModel.acceptCall(pendingCall.callId, pendingCall.threadId, pendingCall.callerName)
+            Log.d("FamilyConnectRoot", "✅ LaunchedEffect: acceptCall invoked")
+        }
+    }
+    
     FamilyConnectTheme(darkTheme = darkMode) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            if (viewModel.currentUser == null) {
-                AuthScreen(viewModel = viewModel)
-            } else {
-                HomeScreen(viewModel = viewModel)
+            // Explicitly check all possible call states
+            val isIncomingCall = callState.status == CallStatus.REQUESTING ||
+                    callState.status == CallStatus.CONNECTING ||
+                    callState.status == CallStatus.ACTIVE
+            
+            val app = context.applicationContext as com.familyconnect.app.FamilyConnectApp
+            val hasPendingCall = app.pendingCallIntent != null
+            
+            Log.d("FamilyConnectRoot", "📱 Rendering (key=$callKey): isIncoming=$isIncomingCall, pending=$hasPendingCall, status=${callState.status}")
+            
+            // PRIORITY 1: Always show call screen if ANY call state exists
+            when {
+                isIncomingCall -> {
+                    Log.d("FamilyConnectRoot", "🎯 RENDERING CALL SCREEN ✅")
+                    if (callState.callType == CallType.VIDEO) {
+                        VideoCallScreen(
+                            threadName = callState.activeCallPartyName ?: "Unknown",
+                            callState = callState,
+                            webRTCManager = viewModel.getWebRTCManager(),
+                            onToggleMute = { enabled -> viewModel.toggleLocalAudio(enabled) },
+                            onToggleVideo = { enabled -> viewModel.toggleLocalVideo(enabled) },
+                            onSwitchCamera = { viewModel.switchCamera() },
+                            onEndCall = { viewModel.endCall(callState.activeThreadId) }
+                        )
+                    } else {
+                        AudioCallScreen(
+                            threadName = callState.activeCallPartyName ?: "Unknown",
+                            callState = callState,
+                            onToggleMute = { enabled -> viewModel.toggleLocalAudio(enabled) },
+                            onToggleSpeaker = { enabled -> viewModel.toggleRemoteAudio(enabled) },
+                            onEndCall = { viewModel.endCall(callState.activeThreadId) }
+                        )
+                    }
+                }
+                
+                hasPendingCall -> {
+                    Log.d("FamilyConnectRoot", "⏳ Pending call detected, showing loading state")
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("Incoming call...", style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+                
+                viewModel.currentUser == null -> {
+                    Log.d("FamilyConnectRoot", "📱 No user logged in → AuthScreen")
+                    AuthScreen(viewModel = viewModel)
+                }
+                
+                else -> {
+                    Log.d("FamilyConnectRoot", "🏠 User logged in → HomeScreen")
+                    HomeScreen(viewModel = viewModel)
+                }
             }
         }
     }
@@ -963,6 +1034,19 @@ private fun ChatScreen(
                                     color = Color(0xFF666666),
                                     fontSize = 13.sp
                                 )
+                                // Last message preview
+                                val lastMsg = viewModel.getLastMessageForUser(user.mobile)
+                                if (lastMsg.isNotBlank()) {
+                                    Text(
+                                        lastMsg,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF888888),
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    )
+                                }
                                 // Always show online / last-seen status row
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -977,11 +1061,14 @@ private fun ChatScreen(
                                                 shape = RoundedCornerShape(50.dp)
                                             )
                                     )
+                                    // Show "typing..." if user is typing, otherwise show status
+                                    val isTyping = viewModel.isUserTyping(user.mobile)
                                     Text(
-                                        if (user.isOnline) "Active now"
+                                        if (isTyping) "typing..."
+                                        else if (user.isOnline) "Active now"
                                         else viewModel.formatLastSeen(user.lastSeen).ifBlank { "Offline" },
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (user.isOnline) Color(0xFF4CAF50) else Color(0xFF999999),
+                                        color = if (isTyping) Color(0xFF6366F1) else if (user.isOnline) Color(0xFF4CAF50) else Color(0xFF999999),
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 11.sp
                                     )
@@ -1163,13 +1250,13 @@ private fun ChatScreen(
                                     message.senderName,
                                     fontWeight = FontWeight.SemiBold,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFF888888)
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
                                     message.senderMobile,
                                     fontWeight = FontWeight.Normal,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFFAAAAAA),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp
                                 )
                             }
@@ -1300,35 +1387,35 @@ private fun ChatScreen(
                                         viewModel.formatTime(message.timestamp),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (isCurrentUser)
-                                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
+                                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
                                         else
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
                                     )
                                     if (!message.senderLocation.isNullOrBlank()) {
                                         Text(
                                             "•",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = if (isCurrentUser)
-                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.4f)
+                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
                                             else
-                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                                         )
                                         Icon(
                                             Icons.Filled.LocationOn,
                                             contentDescription = null,
                                             modifier = Modifier.size(10.dp),
                                             tint = if (isCurrentUser)
-                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
+                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
                                             else
-                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
                                         )
                                         Text(
                                             message.senderLocation,
                                             style = MaterialTheme.typography.labelSmall,
                                             color = if (isCurrentUser)
-                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f)
+                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
                                             else
-                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
                                         )
                                     }
                                 }

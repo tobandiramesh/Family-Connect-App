@@ -1,0 +1,62 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+  
+  <!-- Left red heart (bright red) -->
+  <path
+      android:pathData="M38,72C38,57 48,47 61,47C70,47 78,53 82,63C83,60 84,57 86,54C89,47 97,42 105,42C119,42 130,52 130,68C130,89 108,110 82,132C56,110 36,89 36,72"
+      android:fillColor="#EF4444"/>
+  
+  <!-- Left heart lighter shade (for dimension) -->
+  <path
+      android:pathData="M38,72C38,57 48,47 61,47C70,47 78,53 82,63C83,60 84,57 86,54C89,47 97,42 105,42C119,42 130,52 130,68C130,78 120,87 105,98"
+      android:fillColor="#FCA5A5"
+      android:fillAlpha="0.5"/>
+  
+  <!-- Right red heart (darker red) -->
+  <path
+      android:pathData="M88,72C88,57 98,47 111,47C120,47 128,53 132,63C133,60 134,57 136,54C139,47 147,42 155,42C169,42 180,52 180,68C180,89 158,110 132,132C106,110 86,89 86,72"
+      android:fillColor="#DC2626"/>
+  
+  <!-- Right heart lighter shade (for dimension) -->
+  <path
+      android:pathData="M88,72C88,57 98,47 111,47C120,47 128,53 132,63C133,60 134,57 136,54C139,47 147,42 155,42C169,42 180,52 180,68C180,78 170,87 155,98"
+      android:fillColor="#FCA5A5"
+      android:fillAlpha="0.6"/>
+  
+  <!-- Bright connecting line between hearts -->
+  <path
+      android:pathData="M82,98L132,98"
+      android:strokeColor="#FF4444"
+      android:strokeWidth="6"
+      android:strokeLineCap="round"/>
+  
+  <!-- White highlight on left heart -->
+  <path
+      android:pathData="M62,60C62,57 64,55 66,55C68,55 70,57 70,60"
+      android:fillColor="#FFFFFF"
+      android:fillAlpha="0.6"/>
+  
+  <!-- White highlight on right heart -->
+  <path
+      android:pathData="M112,60C112,57 114,55 116,55C118,55 120,57 120,60"
+      android:fillColor="#FFFFFF"
+      android:fillAlpha="0.6"/>
+  
+  <!-- Sparkle 1 (top left) -->
+  <path
+      android:pathData="M30,25L32,30L37,32L32,34L30,39L28,34L23,32L28,30Z"
+      android:fillColor="#FFD700"/>
+  
+  <!-- Sparkle 2 (top right) -->
+  <path
+      android:pathData="M162,28L163,32L166,34L163,36L162,40L161,36L158,34L161,32Z"
+      android:fillColor="#FFD700"/>
+  
+  <!-- Sparkle 3 (bottom center) -->
+  <path
+      android:pathData="M96,150L97,153L100,155L97,157L96,160L95,157L92,155L95,153Z"
+      android:fillColor="#FFD700"/>
+</vector>

@@ -51,8 +51,8 @@ private val DarkColors = darkColorScheme(
     onSecondaryContainer = Color(0xFFFFFFFF),
     
     tertiary = Tertiary,
-    onTertiary = Color(0xFF000000),
-    tertiaryContainer = Color(0xFFB45309),
+    onTertiary = Color(0xFF1A1F2E),
+    tertiaryContainer = Color(0xFF7C2D12),
     onTertiaryContainer = Color(0xFFFEF3C7),
     
     error = ErrorLight,
@@ -65,8 +65,8 @@ private val DarkColors = darkColorScheme(
     
     surface = DarkSurfaceVariant,
     onSurface = Color(0xFFF3F4F6),
-    surfaceVariant = Color(0xFF374151),
-    onSurfaceVariant = Color(0xFFBCC0CA),
+    surfaceVariant = Color(0xFF3A4251),
+    onSurfaceVariant = Color(0xFFD1D5DB),
     
     outline = Color(0xFF5A6271)
 )

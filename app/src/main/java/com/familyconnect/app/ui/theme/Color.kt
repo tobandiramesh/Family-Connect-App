@@ -15,9 +15,9 @@ val SurfaceLight = Color(0xFFFAFAFA)     // Off-white background
 val SurfaceMedium = Color(0xFFF9FAFB)    // Very light gray
 val SurfaceDark = Color(0xFFF3F4F6)      // Light gray
 
-// Dark Mode Colors
-val DarkSurface = Color(0xFF111827)      // Very dark gray
-val DarkSurfaceVariant = Color(0xFF1F2937) // Dark gray
+// Dark Mode Colors - User-friendly with better contrast
+val DarkSurface = Color(0xFF1A1F2E)      // Softer dark gray (not pure black)
+val DarkSurfaceVariant = Color(0xFF252D3D) // Slightly lighter gray for depth
 val DarkPrimary = Color(0xFF818CF8)      // Light indigo for dark mode
 
 // Accent Colors
