@@ -20,8 +20,11 @@ import com.familyconnect.app.data.model.OnlineUser
 import com.familyconnect.app.data.model.TaskItem
 import com.familyconnect.app.data.model.UserProfile
 import com.familyconnect.app.data.repository.FamilyRepository
+import com.familyconnect.app.data.repository.UserManagementService
+import com.familyconnect.app.data.repository.AllowedUser
 import com.familyconnect.app.notifications.CallListenerService
 import com.familyconnect.app.notifications.NotificationHelper
+import kotlinx.coroutines.flow.Flow
 import com.familyconnect.app.webrtc.CallRequest
 import com.familyconnect.app.webrtc.CallStatus
 import com.familyconnect.app.webrtc.CallState
@@ -194,9 +197,43 @@ class FamilyViewModel(
         initialValue = emptyList()
     )
 
+    // User Management state
+    val allowedUsers = UserManagementService.observeAllowedUsers().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    // Form state for adding/editing users
+    var manageUserName by mutableStateOf("")
+    var manageUserMobile by mutableStateOf("")
+    var manageUserRole by mutableStateOf(FamilyRole.CHILD)
+    var editingUserId by mutableStateOf<String?>(null)
+    var userManagementMessage by mutableStateOf<String?>(null)
+
     init {
         viewModelScope.launch {
+            // Verify Firebase connection first
+            Log.d("🔥 FamilyViewModel", "📡 STARTUP: Verifying Firebase connection...")
+            val fbReady = UserManagementService.verifyFirebaseConnection()
+            if (!fbReady) {
+                Log.e("🔥 FamilyViewModel", "❌ CRITICAL: Firebase not working! App will not sync data properly")
+            } else {
+                Log.d("🔥 FamilyViewModel", "✅ Firebase verified and ready")
+            }
+        }
+        
+        viewModelScope.launch {
+            // Sync all Firebase users to local database at app startup
+            Log.d("🔥 FamilyViewModel", "📡 STARTUP: Syncing Firebase users on app startup...")
+            repository.syncFirebaseUsersToLocal()
+            Log.d("🔥 FamilyViewModel", "📡 STARTUP: Firebase sync completed")
+        }
+        
+        viewModelScope.launch {
+            Log.d("🔥 FamilyViewModel", "📡 STARTUP: Seeding default users...")
             repository.seedDefaultUsers()
+            Log.d("🔥 FamilyViewModel", "📡 STARTUP: Default user seeding completed")
         }
         // Auto-restore session from DataStore
         viewModelScope.launch {
@@ -234,60 +271,59 @@ class FamilyViewModel(
     fun login() {
         viewModelScope.launch {
             try {
-                Log.d("FamilyViewModel", "Login attempt with mobile: ${loginMobile.take(4)}***")
+                Log.d("🔥 FamilyViewModel", "🔐 LOGIN ATTEMPT: ${loginMobile}")
                 
                 val result = repository.loginByMobile(loginMobile)
                 if (result != null) {
-                    Log.d("FamilyViewModel", "Login successful for: ${result.name}")
+                    Log.d("🔥 FamilyViewModel", "✅ LOGIN SUCCESSFUL: ${result.name} (${result.mobile})")
                     
                     try {
                         currentUser = result
                         loginError = null
                         
-                        Log.d("FamilyViewModel", "Saving login session...")
+                        Log.d("🔥 FamilyViewModel", "💾 Saving login session...")
                         repository.saveLoggedInMobile(result.mobile)
                         
-                        Log.d("FamilyViewModel", "Setting user online in Firebase...")
+                        Log.d("🔥 FamilyViewModel", "🔥 Setting user online in Firebase...")
                         repository.setUserOnline(result.mobile, result.name)
                         
-                        Log.d("FamilyViewModel", "Starting incoming calls observer...")
+                        Log.d("🔥 FamilyViewModel", "📞 Starting incoming calls observer...")
                         startObservingIncomingCalls()
                         
                         // Start observing chat threads for this user
                         // Use launchIn instead of collect to avoid blocking
-                        Log.d("FamilyViewModel", "Observing chat threads...")
+                        Log.d("🔥 FamilyViewModel", "💬 Observing chat threads...")
                         repository.observeUserChatThreads(result.mobile)
                             .onEach { threads ->
-                                Log.d("FamilyViewModel", "Chat threads updated: ${threads.size} threads")
+                                Log.d("🔥 FamilyViewModel", "💬 Chat threads: ${threads.size} found")
                                 _userChatThreadsFlow.value = threads
                             }
                             .launchIn(viewModelScope)
                         
                         // Start background listener service after a small delay to ensure Room/Firebase are ready
                         try {
-                            Log.d("FamilyViewModel", "Waiting before starting CallListenerService...")
+                            Log.d("🔥 FamilyViewModel", "⏳ Delaying before CallListenerService...")
                             kotlinx.coroutines.delay(200)
                             
-                            Log.d("FamilyViewModel", "Starting CallListenerService...")
+                            Log.d("🔥 FamilyViewModel", "🎧 Starting CallListenerService...")
                             CallListenerService.start(context, result.mobile, result.name)
-                            Log.d("FamilyViewModel", "CallListenerService started successfully")
+                            Log.d("🔥 FamilyViewModel", "✅ CallListenerService started")
                         } catch (e: Exception) {
-                            Log.e("FamilyViewModel", "Failed to start CallListenerService", e)
-                            // Don't fail login if service fails to start - just log and continue
+                            Log.e("🔥 FamilyViewModel", "❌ CallListenerService failed: ${e.message}", e)
                         }
                         
-                        Log.d("FamilyViewModel", "Login flow completed successfully")
+                        Log.d("🔥 FamilyViewModel", "✅ LOGIN FLOW COMPLETE")
                     } catch (e: Exception) {
-                        Log.e("FamilyViewModel", "Error during post-login setup", e)
+                        Log.e("🔥 FamilyViewModel", "❌ Post-login error: ${e.message}", e)
                         loginError = "Setup failed: ${e.message.orEmpty().take(50)}"
-                        currentUser = null  // Reset on error
+                        currentUser = null
                     }
                 } else {
-                    Log.d("FamilyViewModel", "Login failed: Mobile not registered")
+                    Log.e("🔥 FamilyViewModel", "❌ LOGIN FAILED: Mobile not found in database: $loginMobile")
                     loginError = "This mobile number is not allowed to use the app"
                 }
             } catch (e: Exception) {
-                Log.e("FamilyViewModel", "Login error", e)
+                Log.e("🔥 FamilyViewModel", "❌ LOGIN ERROR: ${e.message}", e)
                 loginError = "Login failed: ${e.message.orEmpty().take(50)}"
             }
         }
@@ -1109,6 +1145,120 @@ class FamilyViewModel(
                 }
             }
         }
+    }
+
+    // User Management Functions
+    fun addOrUpdateUser() {
+        if (manageUserName.isBlank() || manageUserMobile.isBlank()) {
+            userManagementMessage = "Please fill all fields"
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                val cleanMobile = manageUserMobile.filter { it.isDigit() }
+                val userName = manageUserName.trim()
+                val userRole = manageUserRole
+                
+                userManagementMessage = "Saving user..."
+                Log.d("🔥 FamilyViewModel", "Starting to add/update user: $cleanMobile")
+                
+                // Add/update to local database first (faster)
+                Log.d("🔥 FamilyViewModel", "Saving to local database...")
+                val localResult = repository.registerUser(
+                    name = userName,
+                    mobile = cleanMobile,
+                    role = userRole
+                )
+                
+                localResult.onSuccess {
+                    Log.d("🔥 FamilyViewModel", "✅ User added to local database: $cleanMobile")
+                }.onFailure { error ->
+                    Log.e("🔥 FamilyViewModel", "❌ Local DB error: ${error.message}", error)
+                    userManagementMessage = "Local DB Error: ${error.message}"
+                    return@launch  // Don't continue if local save fails
+                }
+                
+                // Then add to Firebase
+                Log.d("🔥 FamilyViewModel", "Saving to Firebase...")
+                var firebaseSuccess = false
+                var firebaseError: String? = null
+                
+                UserManagementService.addOrUpdateUser(
+                    mobile = cleanMobile,
+                    name = userName,
+                    role = userRole,
+                    onSuccess = {
+                        firebaseSuccess = true
+                        Log.d("🔥 FamilyViewModel", "✅ User added/updated in Firebase: $cleanMobile")
+                    },
+                    onError = { error ->
+                        firebaseError = error
+                        Log.e("🔥 FamilyViewModel", "❌ Firebase error: $error")
+                    }
+                )
+                
+                // Wait for Firebase to complete (with longer timeout)
+                var attempts = 0
+                while (!firebaseSuccess && firebaseError == null && attempts < 50) {
+                    delay(100)
+                    attempts++
+                }
+                
+                if (firebaseSuccess) {
+                    Log.d("🔥 FamilyViewModel", "✅ Firebase save confirmed for: $cleanMobile")
+                    userManagementMessage = "✅ User added successfully and synced to Firebase!\nOther devices will now see this member."
+                    clearManagementForm()
+                } else {
+                    val error = firebaseError
+                    if (error != null) {
+                        Log.e("🔥 FamilyViewModel", "❌ Firebase save failed: $error")
+                        userManagementMessage = "❌ FIREBASE ERROR:\n$error\n\n⚠️ User saved LOCALLY only!\n\nTo fix:\n1. Check Firebase has Realtime Database created\n2. Verify security rules are published\n3. Ensure rules have: \".write\": true\n\nWithout Firebase, other devices won't see this user!"
+                    } else {
+                        Log.w("🔥 FamilyViewModel", "⚠️ Firebase save timeout after 5 seconds")
+                        userManagementMessage = "⚠️ FIREBASE TIMEOUT:\nUser saved locally but Firebase didn't respond.\n\nOther devices won't see this user.\n\nPlease check your internet and Firebase configuration."
+                        clearManagementForm()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("🔥 FamilyViewModel", "❌ Error in addOrUpdateUser: ${e.message}", e)
+                userManagementMessage = "❌ ERROR: ${e.message}"
+            }
+        }
+    }
+
+    fun deleteUser(userId: String) {
+        viewModelScope.launch {
+            try {
+                UserManagementService.deleteUser(
+                    mobile = userId,
+                    onSuccess = {
+                        userManagementMessage = "User deleted successfully"
+                    },
+                    onError = { error ->
+                        userManagementMessage = "Error: $error"
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("FamilyViewModel", "Error deleting user: ${e.message}", e)
+                userManagementMessage = "Error: ${e.message}"
+            }
+        }
+    }
+
+    fun startEditingUser(user: AllowedUser) {
+        editingUserId = user.mobile  // Use mobile as identifier
+        manageUserName = user.name
+        manageUserMobile = user.mobile
+        manageUserRole = FamilyRole.valueOf(user.role)
+    }
+
+    fun clearManagementForm() {
+        manageUserName = ""
+        manageUserMobile = ""
+        manageUserRole = FamilyRole.CHILD
+        editingUserId = null
+        userManagementMessage = null
     }
 
     override fun onCleared() {

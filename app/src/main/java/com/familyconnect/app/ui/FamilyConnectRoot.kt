@@ -8,6 +8,7 @@ import android.media.RingtoneManager
 import android.net.Uri
 import android.content.pm.PackageManager
 import android.provider.MediaStore
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
@@ -1153,13 +1155,24 @@ private fun ChatScreen(
                         horizontalAlignment = if (isCurrentUser) Alignment.End else Alignment.Start
                     ) {
                         if (!isCurrentUser) {
-                            Text(
-                                message.senderName,
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF888888),
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
-                            )
+                            Column(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    message.senderName,
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF888888)
+                                )
+                                Text(
+                                    message.senderMobile,
+                                    fontWeight = FontWeight.Normal,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFFAAAAAA),
+                                    fontSize = 11.sp
+                                )
+                            }
                         }
                         Card(
                             modifier = Modifier
@@ -2191,309 +2204,348 @@ private fun NotesScreen(viewModel: FamilyViewModel) {
 @Composable
 private fun SettingsScreen(viewModel: FamilyViewModel, role: FamilyRole) {
     val darkMode by viewModel.darkMode.collectAsState(initial = false)
-    val language by viewModel.language.collectAsState(initial = "en")
-    val largeText by viewModel.largeText.collectAsState(initial = false)
-    val adminSetupPin by viewModel.adminSetupPin.collectAsState(initial = "2468")
-    val users by viewModel.users.collectAsState(initial = emptyList())
+    var showMemberManagement by remember { mutableStateOf(false) }
+    var showAdminSetup by remember { mutableStateOf(false) }
+    
+    if (showMemberManagement) {
+        MemberManagementScreen(viewModel, onBack = { showMemberManagement = false })
+    } else if (showAdminSetup) {
+        AdminSetupScreen(viewModel, onBack = { showAdminSetup = false })
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "⚙️ Settings",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
 
+            // Profile Info Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("👤 Your Role", fontWeight = FontWeight.Bold)
+                    Text("Role: ${role.name}", style = MaterialTheme.typography.bodyMedium)
+                    Text("✅ Notifications enabled", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            // Family Members Section
+            if (role == FamilyRole.ADMIN) {
+                Text(
+                    "👥 Family Members",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Manage Family", fontWeight = FontWeight.Bold)
+                        Button(
+                            onClick = { showMemberManagement = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("View/Add Members")
+                        }
+                    }
+                }
+
+                // Admin Controls
+                Text(
+                    "🔐 Admin Controls",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Admin Features", fontWeight = FontWeight.Bold)
+                        Button(
+                            onClick = { showAdminSetup = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Admin Setup")
+                        }
+                    }
+                }
+            }
+
+            // Display Settings Section
+            Text(
+                "🎨 Display Settings",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("🌙 Dark Mode", fontWeight = FontWeight.Bold)
+                        Switch(
+                            checked = darkMode,
+                            onCheckedChange = { viewModel.setDarkMode(it) }
+                        )
+                    }
+                }
+            }
+
+            // Logout Section
+            Text(
+                "Account",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = { viewModel.logout() },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFD32F2F)
+                        )
+                    ) {
+                        Icon(Icons.Filled.Logout, contentDescription = "Logout", modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Logout")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun MemberManagementScreen(viewModel: FamilyViewModel, onBack: () -> Unit) {
+    val allowedUsers by viewModel.allowedUsers.collectAsState(initial = emptyList())
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Appearance Section
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text("← Back to Settings")
+        }
+
         Text(
-            "⚙️ Appearance Settings",
+            "👥 Member Management",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = androidx.compose.material3.CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = androidx.compose.material3.CardDefaults.cardElevation(
-                defaultElevation = 4.dp
-            )
-        ) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                Text("Add New Member", fontWeight = FontWeight.Bold)
+                
+                OutlinedTextField(
+                    value = viewModel.manageUserName,
+                    onValueChange = { viewModel.manageUserName = it },
+                    label = { Text("Member Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                OutlinedTextField(
+                    value = viewModel.manageUserMobile,
+                    onValueChange = { viewModel.manageUserMobile = it.filter(Char::isDigit).take(10) },
+                    label = { Text("Mobile Number") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                Text("Role:", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("🌙 Dark Mode", fontWeight = FontWeight.SemiBold)
-                    Switch(checked = darkMode, onCheckedChange = { viewModel.setDarkMode(it) })
+                    FilterChip(
+                        selected = viewModel.manageUserRole == FamilyRole.PARENT,
+                        onClick = { viewModel.manageUserRole = FamilyRole.PARENT },
+                        label = { Text("Parent") }
+                    )
+                    FilterChip(
+                        selected = viewModel.manageUserRole == FamilyRole.CHILD,
+                        onClick = { viewModel.manageUserRole = FamilyRole.CHILD },
+                        label = { Text("Child") }
+                    )
                 }
 
-                androidx.compose.material3.Divider()
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("🌐 Language", fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = language == "en", onClick = { viewModel.setLanguage("en") }, label = { Text("English") })
-                        FilterChip(selected = language == "es", onClick = { viewModel.setLanguage("es") }, label = { Text("Spanish") })
-                        FilterChip(selected = language == "hi", onClick = { viewModel.setLanguage("hi") }, label = { Text("Hindi") })
-                    }
-                }
-
-                androidx.compose.material3.Divider()
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Button(
+                    onClick = { viewModel.addOrUpdateUser() },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("🔤 Large Text (Accessibility)", fontWeight = FontWeight.SemiBold)
-                    Switch(checked = largeText, onCheckedChange = { viewModel.setLargeText(it) })
+                    Text("➕ Add Member")
                 }
-            }
-        }
 
-        // Profile Section
-        Text(
-            "👤 Profile Information",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = androidx.compose.material3.CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            ),
-            elevation = androidx.compose.material3.CardDefaults.cardElevation(
-                defaultElevation = 4.dp
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Text("Role: ${role.name}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                }
-                Text("✅ Notifications are enabled for events, tasks, and messages.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
-            }
-        }
-
-        // Family Members Section
-        Text(
-            "👥 Family Members",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = androidx.compose.material3.CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = androidx.compose.material3.CardDefaults.cardElevation(
-                defaultElevation = 4.dp
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.People, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("Registered Members (${users.size})", fontWeight = FontWeight.Bold)
-                }
-                users.forEach { user ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp)
-                            .background(MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp))
-                            .padding(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                viewModel.userManagementMessage?.let {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                        )
                     ) {
-                        Text("👤", fontSize = 16.sp)
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(user.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
-                            Text("${user.role.name} • ${user.mobile}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                        Text(it, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
         }
 
-        if (role == FamilyRole.ADMIN) {
-            // Admin Controls Section
+        // Display list of members from Firebase
+        if (allowedUsers.isNotEmpty()) {
             Text(
-                "🔐 Admin Controls",
-                style = MaterialTheme.typography.headlineSmall,
+                "📋 Current Members (${allowedUsers.size})",
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
 
-            // Add New User
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = androidx.compose.material3.CardDefaults.cardElevation(
-                    defaultElevation = 4.dp
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text("➕ Add New Family Member", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                    Text("Provide details to add a new authorized user", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    
-                    OutlinedTextField(
-                        value = viewModel.registerName,
-                        onValueChange = { viewModel.registerName = it },
-                        label = { Text("Full Name") },
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                allowedUsers.forEach { user ->
+                    Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    OutlinedTextField(
-                        value = viewModel.registerMobile,
-                        onValueChange = { viewModel.registerMobile = it.filter(Char::isDigit) },
-                        label = { Text("Mobile Number") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Select Role", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FamilyRole.entries.forEach { entry ->
-                                FilterChip(
-                                    selected = viewModel.registerRole == entry,
-                                    onClick = { viewModel.registerRole = entry },
-                                    label = { Text(entry.name) },
-                                    shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    user.name,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                                Text(
+                                    user.mobile,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    user.role,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
                     }
-                    Button(
-                        onClick = { viewModel.register() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("✅ Add Member", style = MaterialTheme.typography.labelLarge)
-                    }
-                    viewModel.registerMessage?.let {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = androidx.compose.material3.CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer
-                            )
-                        ) {
-                            Text(it, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
                 }
             }
-
-            // Change PIN
+        } else {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(8.dp),
                 colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = androidx.compose.material3.CardDefaults.cardElevation(
-                    defaultElevation = 4.dp
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                Text(
+                    "No members added yet. Add one above.",
+                    modifier = Modifier.padding(12.dp),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminSetupScreen(viewModel: FamilyViewModel, onBack: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text("← Back to Settings")
+        }
+
+        Text(
+            "🔐 Admin Setup",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Change Admin PIN", fontWeight = FontWeight.Bold)
+                Text("Current PIN: 2468", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                
+                OutlinedTextField(
+                    value = viewModel.newAdminSetupPin,
+                    onValueChange = { viewModel.newAdminSetupPin = it.filter(Char::isDigit) },
+                    label = { Text("New PIN (numbers only)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                )
+                OutlinedTextField(
+                    value = viewModel.confirmAdminSetupPin,
+                    onValueChange = { viewModel.confirmAdminSetupPin = it.filter(Char::isDigit) },
+                    label = { Text("Confirm New PIN") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                )
+                Button(
+                    onClick = { viewModel.updateAdminSetupPin() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondary
+                    )
                 ) {
-                    Text("🔑 Change Admin Setup PIN", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                    Text("Current PIN: $adminSetupPin", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    
-                    OutlinedTextField(
-                        value = viewModel.newAdminSetupPin,
-                        onValueChange = { viewModel.newAdminSetupPin = it.filter(Char::isDigit) },
-                        label = { Text("New PIN (numbers only)") },
+                    Text("🔐 Update PIN")
+                }
+                viewModel.adminPinMessage?.let {
+                    Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    OutlinedTextField(
-                        value = viewModel.confirmAdminSetupPin,
-                        onValueChange = { viewModel.confirmAdminSetupPin = it.filter(Char::isDigit) },
-                        label = { Text("Confirm New PIN") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    Button(
-                        onClick = { viewModel.updateAdminSetupPin() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondary
+                        shape = RoundedCornerShape(8.dp),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
                         )
                     ) {
-                        Text("🔐 Update PIN", style = MaterialTheme.typography.labelLarge)
-                    }
-                    viewModel.adminPinMessage?.let {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = androidx.compose.material3.CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer
-                            )
-                        ) {
-                            Text(it, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.labelSmall)
-                        }
+                        Text(it, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
         }
-
-        // Logout section
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = { viewModel.logout() },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp),
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error
-            ),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Logout, contentDescription = "Logout", modifier = Modifier.size(24.dp))
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("🚪 Logout", style = MaterialTheme.typography.titleMedium)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
     }
 }

@@ -1,6 +1,7 @@
 package com.familyconnect.app.data.repository
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -15,9 +16,11 @@ import com.familyconnect.app.data.model.NoteItem
 import com.familyconnect.app.data.model.TaskItem
 import com.familyconnect.app.data.model.UserProfile
 import com.familyconnect.app.notifications.NotificationHelper
+import com.google.firebase.database.FirebaseDatabase
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.tasks.await
 import java.util.concurrent.TimeUnit
 
 private val Context.dataStore by preferencesDataStore(name = "family_settings")
@@ -105,20 +108,185 @@ class FamilyRepository(
 
     suspend fun seedDefaultUsers() {
         if (userDao.countUsers() == 0) {
-            userDao.insert(UserEntity(name = "Family Admin", mobile = "9999999999", role = FamilyRole.ADMIN.name))
-            userDao.insert(UserEntity(name = "Mom", mobile = "8888888888", role = FamilyRole.PARENT.name))
-            userDao.insert(UserEntity(name = "Kid", mobile = "7777777777", role = FamilyRole.CHILD.name))
+            Log.d("🔥 FamilyRepository", "📊 No users found, seeding default users...")
+            
+            // Add default users to local database
+            try {
+                userDao.insert(UserEntity(name = "Family Admin", mobile = "9999999999", role = FamilyRole.ADMIN.name))
+                userDao.insert(UserEntity(name = "Mom", mobile = "8888888888", role = FamilyRole.PARENT.name))
+                userDao.insert(UserEntity(name = "Kid", mobile = "7777777777", role = FamilyRole.CHILD.name))
+                Log.d("🔥 FamilyRepository", "✅ Seeded 3 default users to local database")
+            } catch (e: Exception) {
+                Log.e("🔥 FamilyRepository", "❌ Error seeding local users: ${e.message}", e)
+                return
+            }
+            
+            // Also add default users to Firebase so they sync across devices
+            try {
+                Log.d("🔥 FamilyRepository", "🔥 Adding default users to Firebase...")
+                val db = FirebaseDatabase.getInstance("https://family-connect-app-a219b-default-rtdb.asia-southeast1.firebasedatabase.app")
+                val defaultUsers = listOf(
+                    Triple("9999999999", "Family Admin", FamilyRole.ADMIN.name),
+                    Triple("8888888888", "Mom", FamilyRole.PARENT.name),
+                    Triple("7777777777", "Kid", FamilyRole.CHILD.name)
+                )
+                
+                for ((mobile, name, role) in defaultUsers) {
+                    try {
+                        db.getReference("allowedUsers/$mobile").setValue(mapOf(
+                            "name" to name,
+                            "role" to role
+                        )).await()
+                        Log.d("🔥 FamilyRepository", "✅ Seeded user to Firebase: $mobile ($name)")
+                    } catch (e: Exception) {
+                        Log.e("🔥 FamilyRepository", "❌ Error seeding Firebase user $mobile: ${e.message}")
+                    }
+                }
+                Log.d("🔥 FamilyRepository", "✅ Finished seeding Firebase users")
+            } catch (e: Exception) {
+                Log.e("🔥 FamilyRepository", "❌ Error in Firebase seeding: ${e.message}", e)
+            }
+        } else {
+            Log.d("🔥 FamilyRepository", "ℹ️ Database already has users, skipping seed")
         }
     }
 
     suspend fun loginByMobile(mobile: String): UserProfile? {
-        val user = userDao.getByMobile(mobile.trim()) ?: return null
-        return UserProfile(
-            id = user.id,
-            name = user.name,
-            mobile = user.mobile,
-            role = runCatching { FamilyRole.valueOf(user.role) }.getOrDefault(FamilyRole.CHILD)
-        )
+        val cleanMobile = mobile.trim()
+        Log.d("🔥 FamilyRepository", "🔐 LOGIN: Checking for mobile: $cleanMobile")
+        
+        // First try local database
+        var user = userDao.getByMobile(cleanMobile)
+        Log.d("🔥 FamilyRepository", "📱 Local DB check: ${if (user != null) "✅ Found: ${user.name}" else "❌ Not found"}")
+        
+        // If found locally, ensure they're also in Firebase allowedUsers (non-blocking, fire-and-forget)
+        if (user != null) {
+            try {
+                Log.d("🔥 FamilyRepository", "🔥 Syncing local user to Firebase allowedUsers: $cleanMobile")
+                FirebaseDatabase.getInstance()
+                    .getReference("allowedUsers/$cleanMobile")
+                    .setValue(mapOf(
+                        "name" to user.name,
+                        "role" to user.role
+                    ))
+                    .addOnSuccessListener {
+                        Log.d("🔥 FamilyRepository", "✅ User synced to Firebase allowedUsers: $cleanMobile")
+                    }
+                    .addOnFailureListener { e ->
+                        // Don't log permission errors as they're expected in test mode
+                        if (e.message?.contains("Permission", ignoreCase = true) == true) {
+                            Log.d("🔥 FamilyRepository", "⚠️ Firebase permission denied (expected in test mode) - local DB is sufficient")
+                        } else {
+                            Log.w("🔥 FamilyRepository", "⚠️ Failed to sync to Firebase: ${e.message}")
+                        }
+                    }
+            } catch (e: Exception) {
+                Log.e("🔥 FamilyRepository", "❌ Error syncing to Firebase: ${e.message}")
+            }
+        }
+        
+        // If not found locally, check Firebase allowed users
+        if (user == null) {
+            try {
+                Log.d("🔥 FamilyRepository", "🔥 Firebase fallback: Checking Firebase for $cleanMobile...")
+                
+                val allowedUsersSnapshot = FirebaseDatabase.getInstance("https://family-connect-app-a219b-default-rtdb.asia-southeast1.firebasedatabase.app")
+                    .getReference("allowedUsers")
+                    .get()
+                    .await()
+                
+                Log.d("🔥 FamilyRepository", "📱 Firebase snapshot: exists=${allowedUsersSnapshot.exists()}")
+                
+                if (allowedUsersSnapshot.exists()) {
+                    val firebaseUser = allowedUsersSnapshot.children.find { snapshot -> 
+                        snapshot.key == cleanMobile 
+                    }
+                    
+                    if (firebaseUser != null) {
+                        val name = firebaseUser.child("name").value as? String ?: "Family Member"
+                        val role = firebaseUser.child("role").value as? String ?: FamilyRole.CHILD.name
+                        
+                        Log.d("🔥 FamilyRepository", "✅ Found in Firebase: $name (role: $role)")
+                        
+                        try {
+                            // Auto-add to local database for faster future logins
+                            userDao.insert(UserEntity(
+                                name = name,
+                                mobile = cleanMobile,
+                                role = role
+                            ))
+                            
+                            // Fetch from local database to get the auto-generated ID
+                            user = userDao.getByMobile(cleanMobile)
+                            Log.d("🔥 FamilyRepository", "✅ User synced from Firebase to local DB: $cleanMobile")
+                        } catch (e: Exception) {
+                            Log.e("🔥 FamilyRepository", "❌ Error adding user to local DB: ${e.message}")
+                        }
+                    } else {
+                        Log.d("🔥 FamilyRepository", "❌ User not found in Firebase: $cleanMobile")
+                    }
+                } else {
+                    Log.d("🔥 FamilyRepository", "⚠️ No data at allowedUsers path in Firebase")
+                }
+            } catch (e: Exception) {
+                Log.e("🔥 FamilyRepository", "❌ Firebase error: ${e.message}", e)
+            }
+        }
+        
+        return user?.let {
+            UserProfile(
+                id = it.id,
+                name = it.name,
+                mobile = it.mobile,
+                role = runCatching { FamilyRole.valueOf(it.role) }.getOrDefault(FamilyRole.CHILD)
+            )
+        }
+    }
+
+    /**
+     * Sync all allowed users from Firebase to local database
+     * This ensures that when the app starts, it has the latest family members from Firebase
+     */
+    suspend fun syncFirebaseUsersToLocal() {
+        try {
+            Log.d("🔥 FamilyRepository", "🔄 Starting Firebase to local sync...")
+            
+            val allowedUsersSnapshot = FirebaseDatabase.getInstance("https://family-connect-app-a219b-default-rtdb.asia-southeast1.firebasedatabase.app")
+                .getReference("allowedUsers")
+                .get()
+                .await()
+            
+            Log.d("🔥 FamilyRepository", "📱 Firebase snapshot retrieved, exists=${allowedUsersSnapshot.exists()}")
+            
+            if (allowedUsersSnapshot.exists()) {
+                Log.d("🔥 FamilyRepository", "📝 Firebase snapshot exists, syncing users...")
+                
+                var syncCount = 0
+                for (snapshot in allowedUsersSnapshot.children) {
+                    val mobile = snapshot.key ?: continue
+                    val name = snapshot.child("name").value as? String ?: "Family Member"
+                    val role = snapshot.child("role").value as? String ?: FamilyRole.CHILD.name
+                    
+                    try {
+                        // Always insert with REPLACE strategy - no need to check if exists
+                        userDao.insert(UserEntity(
+                            name = name,
+                            mobile = mobile,
+                            role = role
+                        ))
+                        syncCount++
+                        Log.d("🔥 FamilyRepository", "✅ Synced user from Firebase: $mobile ($name)")
+                    } catch (e: Exception) {
+                        Log.e("🔥 FamilyRepository", "❌ Error syncing user $mobile: ${e.message}")
+                    }
+                }
+                Log.d("🔥 FamilyRepository", "✅ Firebase sync completed - synced $syncCount users")
+            } else {
+                Log.d("🔥 FamilyRepository", "⚠️ No allowed users found in Firebase at path 'allowedUsers'")
+            }
+        } catch (e: Exception) {
+            Log.e("🔥 FamilyRepository", "❌ Error syncing Firebase users: ${e.message}", e)
+        }
     }
 
     suspend fun registerUser(name: String, mobile: String, role: FamilyRole): Result<Unit> {
@@ -129,11 +297,15 @@ class FamilyRepository(
         if (cleanMobile.length < 10) {
             return Result.failure(IllegalArgumentException("Mobile number must be at least 10 digits"))
         }
-        if (userDao.getByMobile(cleanMobile) != null) {
-            return Result.failure(IllegalArgumentException("Mobile number already exists"))
+        try {
+            // Insert or replace if already exists
+            userDao.insert(UserEntity(name = name.trim(), mobile = cleanMobile, role = role.name))
+            Log.d("FamilyRepository", "User registered/updated: $cleanMobile")
+            return Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "Error registering user: ${e.message}", e)
+            return Result.failure(e)
         }
-        userDao.insert(UserEntity(name = name.trim(), mobile = cleanMobile, role = role.name))
-        return Result.success(Unit)
     }
 
     suspend fun addEvent(event: FamilyEvent) {

@@ -19,7 +19,7 @@ import java.util.UUID
 
 object FirebaseService {
     private const val TAG = "FirebaseService"
-    private val database = FirebaseDatabase.getInstance()
+    private val database = FirebaseDatabase.getInstance("https://family-connect-app-a219b-default-rtdb.asia-southeast1.firebasedatabase.app")
 
     // Reference paths
     private const val PRESENCE_PATH = "presence"

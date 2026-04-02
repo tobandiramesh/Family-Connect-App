@@ -14,7 +14,7 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE mobile = :mobile LIMIT 1")
     suspend fun getByMobile(mobile: String): UserEntity?
 
-    @Insert(onConflict = OnConflictStrategy.ABORT)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(user: UserEntity)
 
     @Query("SELECT COUNT(*) FROM users")
