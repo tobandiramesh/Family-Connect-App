@@ -20,6 +20,7 @@ import com.familyconnect.app.data.model.OnlineUser
 import com.familyconnect.app.data.model.TaskItem
 import com.familyconnect.app.data.model.UserProfile
 import com.familyconnect.app.data.repository.FamilyRepository
+import com.familyconnect.app.notifications.CallListenerService
 import com.familyconnect.app.notifications.NotificationHelper
 import com.familyconnect.app.webrtc.CallRequest
 import com.familyconnect.app.webrtc.CallStatus
@@ -39,6 +40,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
@@ -197,40 +200,95 @@ class FamilyViewModel(
         }
         // Auto-restore session from DataStore
         viewModelScope.launch {
-            repository.loggedInMobileFlow.first().let { savedMobile ->
-                if (!savedMobile.isNullOrBlank()) {
-                    val result = repository.loginByMobile(savedMobile)
-                    if (result != null) {
-                        currentUser = result
-                        repository.setUserOnline(result.mobile, result.name)
-                        startObservingIncomingCalls()
-                        refreshLocation()
-                        repository.observeUserChatThreads(result.mobile).collect { threads ->
-                            _userChatThreadsFlow.value = threads
+            try {
+                repository.loggedInMobileFlow.first().let { savedMobile ->
+                    if (!savedMobile.isNullOrBlank()) {
+                        val result = repository.loginByMobile(savedMobile)
+                        if (result != null) {
+                            currentUser = result
+                            repository.setUserOnline(result.mobile, result.name)
+                            startObservingIncomingCalls()
+                            refreshLocation()
+                            
+                            // Start observing chat threads for this user
+                            // Use launchIn instead of collect to avoid blocking
+                            repository.observeUserChatThreads(result.mobile)
+                                .onEach { threads -> _userChatThreadsFlow.value = threads }
+                                .launchIn(viewModelScope)
+                            
+                            // Start background listener service with error handling
+                            try {
+                                CallListenerService.start(context, result.mobile, result.name)
+                            } catch (e: Exception) {
+                                Log.e("FamilyViewModel", "Failed to start CallListenerService on session restore: ${e.message}", e)
+                            }
                         }
                     }
                 }
+            } catch (e: Exception) {
+                Log.e("FamilyViewModel", "Session restore error: ${e.message}", e)
             }
         }
     }
 
     fun login() {
         viewModelScope.launch {
-            val result = repository.loginByMobile(loginMobile)
-            if (result != null) {
-                currentUser = result
-                loginError = null
-                repository.saveLoggedInMobile(result.mobile)
-                // Set user as online in Firebase
-                repository.setUserOnline(result.mobile, result.name)
-                startObservingIncomingCalls()
+            try {
+                Log.d("FamilyViewModel", "Login attempt with mobile: ${loginMobile.take(4)}***")
                 
-                // Start observing chat threads for this user
-                repository.observeUserChatThreads(result.mobile).collect { threads ->
-                    _userChatThreadsFlow.value = threads
+                val result = repository.loginByMobile(loginMobile)
+                if (result != null) {
+                    Log.d("FamilyViewModel", "Login successful for: ${result.name}")
+                    
+                    try {
+                        currentUser = result
+                        loginError = null
+                        
+                        Log.d("FamilyViewModel", "Saving login session...")
+                        repository.saveLoggedInMobile(result.mobile)
+                        
+                        Log.d("FamilyViewModel", "Setting user online in Firebase...")
+                        repository.setUserOnline(result.mobile, result.name)
+                        
+                        Log.d("FamilyViewModel", "Starting incoming calls observer...")
+                        startObservingIncomingCalls()
+                        
+                        // Start observing chat threads for this user
+                        // Use launchIn instead of collect to avoid blocking
+                        Log.d("FamilyViewModel", "Observing chat threads...")
+                        repository.observeUserChatThreads(result.mobile)
+                            .onEach { threads ->
+                                Log.d("FamilyViewModel", "Chat threads updated: ${threads.size} threads")
+                                _userChatThreadsFlow.value = threads
+                            }
+                            .launchIn(viewModelScope)
+                        
+                        // Start background listener service after a small delay to ensure Room/Firebase are ready
+                        try {
+                            Log.d("FamilyViewModel", "Waiting before starting CallListenerService...")
+                            kotlinx.coroutines.delay(200)
+                            
+                            Log.d("FamilyViewModel", "Starting CallListenerService...")
+                            CallListenerService.start(context, result.mobile, result.name)
+                            Log.d("FamilyViewModel", "CallListenerService started successfully")
+                        } catch (e: Exception) {
+                            Log.e("FamilyViewModel", "Failed to start CallListenerService", e)
+                            // Don't fail login if service fails to start - just log and continue
+                        }
+                        
+                        Log.d("FamilyViewModel", "Login flow completed successfully")
+                    } catch (e: Exception) {
+                        Log.e("FamilyViewModel", "Error during post-login setup", e)
+                        loginError = "Setup failed: ${e.message.orEmpty().take(50)}"
+                        currentUser = null  // Reset on error
+                    }
+                } else {
+                    Log.d("FamilyViewModel", "Login failed: Mobile not registered")
+                    loginError = "This mobile number is not allowed to use the app"
                 }
-            } else {
-                loginError = "This mobile number is not allowed to use the app"
+            } catch (e: Exception) {
+                Log.e("FamilyViewModel", "Login error", e)
+                loginError = "Login failed: ${e.message.orEmpty().take(50)}"
             }
         }
     }
@@ -262,6 +320,8 @@ class FamilyViewModel(
         currentUser?.let {
             repository.setUserOffline(it.mobile, it.name)
         }
+        // Stop background listener service
+        CallListenerService.stop(context)
         viewModelScope.launch {
             repository.clearLoggedInMobile()
         }

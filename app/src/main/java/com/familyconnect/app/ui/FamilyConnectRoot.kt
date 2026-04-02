@@ -1,6 +1,7 @@
 package com.familyconnect.app.ui
 
 import android.Manifest
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.media.RingtoneManager
@@ -103,6 +104,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.content.ContextCompat
+import com.familyconnect.app.FamilyConnectApp
 import com.familyconnect.app.data.model.ChatMessageData
 import com.familyconnect.app.webrtc.CallType
 import com.familyconnect.app.data.model.FamilyRole
@@ -112,6 +114,23 @@ import com.familyconnect.app.webrtc.CallStatus
 private enum class HomeTab {
     CHAT,
     SETTINGS
+}
+
+@Composable
+fun Root(app: Application, onViewModelReady: (FamilyViewModel) -> Unit = {}) {
+    val context = LocalContext.current
+    val familyApp = app as FamilyConnectApp
+    
+    val viewModel: FamilyViewModel = viewModel(
+        factory = FamilyViewModelFactory(familyApp.repository, context)
+    )
+    
+    // Call the callback when ViewModel is ready so Activity can store reference
+    LaunchedEffect(viewModel) {
+        onViewModelReady(viewModel)
+    }
+    
+    FamilyConnectRoot(viewModel = viewModel)
 }
 
 @Composable
