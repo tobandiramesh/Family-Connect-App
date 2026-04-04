@@ -5,11 +5,22 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.familyconnect.app.notifications.NotificationHelper
 import com.familyconnect.app.ui.FamilyConnectRoot
@@ -17,23 +28,33 @@ import com.familyconnect.app.ui.FamilyViewModel
 import com.familyconnect.app.ui.FamilyViewModelFactory
 import com.familyconnect.app.ui.theme.FamilyConnectTheme
 import android.util.Log
+import com.familyconnect.app.notifications.CallListenerService
+import android.content.ComponentName
+import android.content.Context
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 
 class MainActivity : ComponentActivity() {
     private var viewModelInstance: FamilyViewModel? = null
+    private var pendingCallHandled = false
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("MainActivity", "=== onCreate called ===")
-        Log.d("MainActivity", "Intent action: ${intent.action}")
-        Log.d("MainActivity", "Intent extras keys: ${intent.extras?.keySet()}")
         
-        // CRITICAL: Extract and store call data BEFORE rendering UI
+        // Auto-start CallListenerService if user is already logged in
+        ensureCallListenerServiceRunning()
+        
+        // 🔥 Register PhoneAccount for Telecom Framework (system call handling)
+        registerPhoneAccount()
+        
+        // Extract and store call data BEFORE rendering UI
         extractAndStorePendingCall(intent)
         
         maybeRequestNotificationPermission()
         maybeRequestFilePermissions()
         maybeRequestAudioPermissions()
         maybeRequestCameraPermission()
+        maybeRequestFullScreenIntentPermission()
         
         // Ensure window is visible when launched from notification
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
@@ -41,11 +62,9 @@ class MainActivity : ComponentActivity() {
         
         val app = application as FamilyConnectApp
         
-        Log.d("MainActivity", "Setting Compose content...")
         setContent {
             FamilyConnectTheme {
                 Root(app = app) { vm ->
-                    Log.d("MainActivity", "✅ ViewModel created and ready")
                     viewModelInstance = vm
                     
                     // Now process the pending call with the ready ViewModel
@@ -53,7 +72,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        Log.d("MainActivity", "Compose content set")
     }
     
     private fun extractAndStorePendingCall(intent: Intent?) {
@@ -62,64 +80,122 @@ class MainActivity : ComponentActivity() {
         val callId = intent.getStringExtra(NotificationHelper.EXTRA_CALL_ID)
         val threadId = intent.getStringExtra(NotificationHelper.EXTRA_THREAD_ID)
         val callerName = intent.getStringExtra(NotificationHelper.EXTRA_CALLER_NAME)
+        val callType = intent.getStringExtra(NotificationHelper.EXTRA_CALL_TYPE) ?: "audio"
+        val action = intent.getStringExtra("action")
         
-        Log.d("MainActivity", "extractAndStorePendingCall: callId=$callId, threadId=$threadId, callerName=$callerName")
-        
+        Log.d("MainActivity", "🔍 extractAndStorePendingCall:")
+        Log.d("MainActivity", "   callId=$callId")
+        Log.d("MainActivity", "   threadId=$threadId")
+        Log.d("MainActivity", "   callerName=$callerName")
+
         if (callId.isNullOrBlank() || threadId.isNullOrBlank()) {
-            Log.w("MainActivity", "❌ Missing call data in intent!")
             return
         }
         
-        Log.d("MainActivity", "🔔 EXTRACT: Storing pending call for UI: $callId from $callerName")
         val app = application as FamilyConnectApp
-        app.pendingCallIntent = PendingCallIntent(callId, threadId, callerName ?: "User")
-        
-        // Clear from intent so it doesn't re-trigger
-        intent.removeExtra(NotificationHelper.EXTRA_CALL_ID)
-        intent.removeExtra(NotificationHelper.EXTRA_THREAD_ID)
-        intent.removeExtra(NotificationHelper.EXTRA_CALLER_NAME)
+        app.setPendingCall(PendingCallIntent(callId, threadId, callerName ?: "User", callType))
     }
     
     private fun processPendingCall(viewModel: FamilyViewModel) {
+        if (pendingCallHandled) {
+            return
+        }
+        
         val app = application as FamilyConnectApp
-        val pendingCall = app.pendingCallIntent
+        val pendingCall = app.pendingCallIntent.value
+        val action = intent.getStringExtra("action")
+        val shouldAutoAccept = action == "accept_call"
         
         if (pendingCall != null) {
-            Log.d("MainActivity", "✅ PROCESS: Found pending call: ${pendingCall.callId}")
-            app.pendingCallIntent = null // Clear so we don't process it again
+            pendingCallHandled = true
             
-            NotificationHelper.cancelCallNotification(this)
+            NotificationHelper.cancelCallNotification(this, pendingCall.callId)
             
-            Log.d("MainActivity", "📞 Calling viewModel.acceptCall(${pendingCall.callId})")
-            viewModel.acceptCall(pendingCall.callId, pendingCall.threadId, pendingCall.callerName)
-            Log.d("MainActivity", "✅ acceptCall completed. callState.status = ${viewModel.callState.status}")
+            // ✅ FIX: If accept button was tapped on notification, auto-accept the call
+            if (shouldAutoAccept) {
+                try {
+                    viewModel.acceptCall(
+                        callId = pendingCall.callId,
+                        threadId = pendingCall.threadId,
+                        fromUserNameOverride = pendingCall.callerName
+                    )
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "   ❌ acceptCall() threw exception: ${e.message}", e)
+                }
+            } else {
+                // Normal case: just show ringing UI
+                Log.d("MainActivity", "   📞 Showing ringing UI...")
+                Log.d("MainActivity", "   Calling setIncomingCallRinging with:")
+                Log.d("MainActivity", "     callId=${pendingCall.callId}")
+                Log.d("MainActivity", "     threadId=${pendingCall.threadId}")
+                Log.d("MainActivity", "     callerName=${pendingCall.callerName}")
+                Log.d("MainActivity", "     callType=${pendingCall.callType} ⭐")
+                
+                viewModel.setIncomingCallRinging(
+                    callId = pendingCall.callId,
+                    threadId = pendingCall.threadId,
+                    callerName = pendingCall.callerName,
+                    callType = pendingCall.callType
+                )
+                Log.d("MainActivity", "   ✅ setIncomingCallRinging() completed with type=${pendingCall.callType}")
+            }
         } else {
-            Log.d("MainActivity", "ℹ️ No pending call to process (might be coming from LaunchedEffect)")
+            Log.d("MainActivity", "   ℹ️ No pending call found")
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
-        Log.d("MainActivity", "🔄 onNewIntent called with action: ${intent.action}")
-        Log.d("MainActivity", "   Extras: ${intent.extras?.keySet()}")
+        setIntent(intent)  // CRITICAL: Update the intent FIRST
+        val action = intent.getStringExtra("action")
         
-        // Always try to extract and process
+        // Always extract and store the pending call
         extractAndStorePendingCall(intent)
         
-        // If we have ViewModel, process immediately
+        // If we have ViewModel, process immediately with this fresh intent
         val vm = viewModelInstance
         if (vm != null) {
-            Log.d("MainActivity", "✅ ViewModel available, processing immediately")
             processPendingCall(vm)
         } else {
-            Log.d("MainActivity", "⚠️ ViewModel not ready yet, will process in LaunchedEffect")
+            Log.d("MainActivity", "⚠️ ViewModel not ready, will process in LaunchedEffect")
         }
     }
     
     override fun onDestroy() {
         super.onDestroy()
         viewModelInstance?.setUserOfflineOnExit()
+    }
+    
+    private fun ensureCallListenerServiceRunning() {
+        try {
+            Log.d("MainActivity", "🔍 Checking if user is already logged in...")
+            val app = application as FamilyConnectApp
+            
+            val loggedInMobile = runBlocking {
+                try {
+                    app.repository.loggedInMobileFlow.first()
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Error reading loggedInMobileFlow: ${e.message}")
+                    null
+                }
+            }
+            
+            if (!loggedInMobile.isNullOrBlank()) {
+                Log.d("MainActivity", "✅ User already logged in: $loggedInMobile")
+                Log.d("MainActivity", "🚀 Auto-starting CallListenerService...")
+                
+                try {
+                    CallListenerService.start(this, loggedInMobile, "")
+                    Log.d("MainActivity", "✅ CallListenerService started successfully!")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "❌ Failed to start CallListenerService: ${e.message}", e)
+                }
+            } else {
+                Log.d("MainActivity", "ℹ️ No logged-in user found, service will start after login")
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error in ensureCallListenerServiceRunning: ${e.message}", e)
+        }
     }
     
     override fun onPause() {
@@ -172,11 +248,69 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun registerPhoneAccount() {
+        try {
+            Log.d("MainActivity", "🔥 Registering PhoneAccount for Telecom Framework...")
+            
+            val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
+            if (telecomManager == null) {
+                Log.e("MainActivity", "   ❌ TelecomManager not available")
+                return
+            }
+
+            val handle = android.telecom.PhoneAccountHandle(
+                ComponentName(this, com.familyconnect.app.telecom.MyConnectionService::class.java),
+                "FamilyConnectCall"
+            )
+
+            val phoneAccount = android.telecom.PhoneAccount.builder(handle, "Family Connect Calls")
+                .setCapabilities(android.telecom.PhoneAccount.CAPABILITY_CALL_PROVIDER)
+                .build()
+
+            telecomManager.registerPhoneAccount(phoneAccount)
+            Log.d("MainActivity", "   ✅ PhoneAccount registered successfully!")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "   ❌ Error registering PhoneAccount: ${e.message}", e)
+        }
+    }
+
+    private fun maybeRequestFullScreenIntentPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {  // Android 12+
+            val permission = Manifest.permission.USE_FULL_SCREEN_INTENT
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+                Log.d("MainActivity", "Requesting USE_FULL_SCREEN_INTENT permission")
+                ActivityCompat.requestPermissions(this, arrayOf(permission), 1005)
+            } else {
+                Log.d("MainActivity", "✅ USE_FULL_SCREEN_INTENT permission already granted")
+            }
+        }
+    }
 }
 
 @Composable
 private fun Root(app: FamilyConnectApp, onViewModelReady: (FamilyViewModel) -> Unit = {}) {
     val viewModel: FamilyViewModel = viewModel(factory = FamilyViewModelFactory(app.repository, app))
     onViewModelReady(viewModel)
-    FamilyConnectRoot(viewModel = viewModel)
+    
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // 🔥 TEMPORARY TEST BUTTON - Remove after debugging
+        Button(
+            onClick = {
+                Log.d("MainActivity", "🧪 TEST BUTTON: Testing notification...")
+                NotificationHelper.postIncomingCallNotification(
+                    app,
+                    "test_call_123",
+                    "test_thread_456",
+                    "Test User",
+                    "audio"
+                )
+            },
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text("🔥 TEST NOTIFICATION")
+        }
+        
+        FamilyConnectRoot(viewModel = viewModel)
+    }
 }

@@ -148,13 +148,19 @@ fun FamilyConnectRoot(viewModel: FamilyViewModel) {
     // Check for pending call from notification on first composition
     LaunchedEffect(Unit) {
         val app = context.applicationContext as com.familyconnect.app.FamilyConnectApp
-        val pendingCall = app.pendingCallIntent
-        if (pendingCall != null) {
-            Log.d("FamilyConnectRoot", "🔔 LaunchedEffect: PENDING CALL DETECTED: ${pendingCall.callId}")
-            Log.d("FamilyConnectRoot", "   Clearing pending call and accepting...")
-            app.pendingCallIntent = null
-            viewModel.acceptCall(pendingCall.callId, pendingCall.threadId, pendingCall.callerName)
-            Log.d("FamilyConnectRoot", "✅ LaunchedEffect: acceptCall invoked")
+        val pendingCallValue = app.pendingCallIntent.value
+        if (pendingCallValue != null) {
+            Log.d("FamilyConnectRoot", "🔔 LaunchedEffect: PENDING CALL DETECTED: ${pendingCallValue.callId}")
+            Log.d("FamilyConnectRoot", "   Setting call state to RINGING to show UI with Accept/Reject buttons...")
+            app.setPendingCall(null)
+            // Set state to RINGING so user sees the IncomingCallOverlay with Accept/Reject buttons
+            viewModel.setIncomingCallRinging(
+                callId = pendingCallValue.callId,
+                threadId = pendingCallValue.threadId,
+                callerName = pendingCallValue.callerName,
+                callType = pendingCallValue.callType
+            )
+            Log.d("FamilyConnectRoot", "✅ LaunchedEffect: setIncomingCallRinging invoked - IncomingCallOverlay with buttons should now show")
         }
     }
     
@@ -162,18 +168,42 @@ fun FamilyConnectRoot(viewModel: FamilyViewModel) {
         Surface(modifier = Modifier.fillMaxSize()) {
             // Explicitly check all possible call states
             val isIncomingCall = callState.status == CallStatus.REQUESTING ||
+                    callState.status == CallStatus.RINGING ||
                     callState.status == CallStatus.CONNECTING ||
                     callState.status == CallStatus.ACTIVE
             
             val app = context.applicationContext as com.familyconnect.app.FamilyConnectApp
-            val hasPendingCall = app.pendingCallIntent != null
+            val hasPendingCall = app.pendingCallIntent.value != null
             
-            Log.d("FamilyConnectRoot", "📱 Rendering (key=$callKey): isIncoming=$isIncomingCall, pending=$hasPendingCall, status=${callState.status}")
+            Log.d("FamilyConnectRoot", "📱 Rendering: isIncoming=$isIncomingCall, status=${callState.status}, pending=$hasPendingCall, incomingRequest=${callState.incomingCallRequest != null}")
             
-            // PRIORITY 1: Always show call screen if ANY call state exists
-            when {
-                isIncomingCall -> {
-                    Log.d("FamilyConnectRoot", "🎯 RENDERING CALL SCREEN ✅")
+            // PRIORITY 1: Show IncomingCallOverlay with buttons if RINGING with request
+            if (callState.status == CallStatus.RINGING && callState.incomingCallRequest != null) {
+                Log.d("FamilyConnectRoot", "🎯 RENDERING INCOMING CALL OVERLAY (with Accept/Reject buttons) ✅")
+                IncomingCallOverlay(
+                    callerName = callState.incomingCallRequest.fromUserName.ifBlank { "Unknown" },
+                    isVideoCall = callState.callType == CallType.VIDEO,
+                    onAccept = {
+                        Log.d("FamilyConnectRoot", "✅ ACCEPT button tapped")
+                        // Accept the call directly (permissions already granted during login)
+                        viewModel.acceptCall(
+                            callState.incomingCallRequest.callId,
+                            callState.incomingCallRequest.threadId,
+                            callState.incomingCallRequest.fromUserName
+                        )
+                    },
+                    onReject = {
+                        Log.d("FamilyConnectRoot", "❌ REJECT button tapped")
+                        viewModel.rejectCall(
+                            callState.incomingCallRequest.callId,
+                            callState.incomingCallRequest.threadId
+                        )
+                    }
+                )
+            }
+            // PRIORITY 2: Show active call screen when CONNECTING or ACTIVE
+            else if (callState.status == CallStatus.CONNECTING || callState.status == CallStatus.ACTIVE) {
+                Log.d("FamilyConnectRoot", "🎯 RENDERING ACTIVE CALL SCREEN ✅")
                     if (callState.callType == CallType.VIDEO) {
                         VideoCallScreen(
                             threadName = callState.activeCallPartyName ?: "Unknown",
@@ -193,28 +223,16 @@ fun FamilyConnectRoot(viewModel: FamilyViewModel) {
                             onEndCall = { viewModel.endCall(callState.activeThreadId) }
                         )
                     }
-                }
-                
-                hasPendingCall -> {
-                    Log.d("FamilyConnectRoot", "⏳ Pending call detected, showing loading state")
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("Incoming call...", style = MaterialTheme.typography.bodyLarge)
-                        }
-                    }
-                }
-                
-                viewModel.currentUser == null -> {
-                    Log.d("FamilyConnectRoot", "📱 No user logged in → AuthScreen")
-                    AuthScreen(viewModel = viewModel)
-                }
-                
-                else -> {
-                    Log.d("FamilyConnectRoot", "🏠 User logged in → HomeScreen")
-                    HomeScreen(viewModel = viewModel)
-                }
+            }
+            // PRIORITY 3: Show HomeScreen with Scaffold if no call
+            else if (viewModel.currentUser != null) {
+                Log.d("FamilyConnectRoot", "🏠 RENDERING HOME SCREEN ✅")
+                HomeScreen(viewModel = viewModel)
+            }
+            // PRIORITY 4: Show AuthScreen if not logged in
+            else {
+                Log.d("FamilyConnectRoot", "🔐 RENDERING AUTH SCREEN ✅")
+                AuthScreen(viewModel = viewModel)
             }
         }
     }
@@ -499,6 +517,7 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
 
     // Determine if a full-screen call overlay should be shown
     val isInCall = callState.status == CallStatus.REQUESTING ||
+            callState.status == CallStatus.RINGING ||
             callState.status == CallStatus.CONNECTING ||
             callState.status == CallStatus.ACTIVE
 
@@ -584,28 +603,6 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
                         )
                         HomeTab.SETTINGS -> SettingsScreen(viewModel, user.role)
                     }
-                }
-
-                if (callState.status == CallStatus.RINGING && callState.incomingCallRequest != null) {
-                    IncomingCallOverlay(
-                        callerName = callState.incomingCallRequest.fromUserName.ifBlank { "Unknown" },
-                        isVideoCall = callState.callType == CallType.VIDEO,
-                        onAccept = {
-                            runWithCallPermissions(needCamera = callState.callType == CallType.VIDEO) {
-                                viewModel.acceptCall(
-                                    callState.incomingCallRequest.callId,
-                                    callState.incomingCallRequest.threadId,
-                                    callState.incomingCallRequest.fromUserName
-                                )
-                            }
-                        },
-                        onReject = {
-                            viewModel.rejectCall(
-                                callState.incomingCallRequest.callId,
-                                callState.incomingCallRequest.threadId
-                            )
-                        }
-                    )
                 }
             }
         }

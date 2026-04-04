@@ -8,9 +8,11 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.familyconnect.app.MainActivity
+import com.familyconnect.app.IncomingCallActivity
 
 object NotificationHelper {
     private const val CHANNEL_ID = "family_connect_updates"
@@ -24,6 +26,7 @@ object NotificationHelper {
     const val EXTRA_CALL_ID = "extra_call_id"
     const val EXTRA_THREAD_ID = "extra_thread_id"
     const val EXTRA_CALLER_NAME = "extra_caller_name"
+    const val EXTRA_CALL_TYPE = "extra_call_type"
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -38,11 +41,11 @@ object NotificationHelper {
             channel.description = "Event, task, and message reminders"
             manager.createNotificationChannel(channel)
 
-            // Incoming calls channel (high priority with ringtone)
+            // Incoming calls channel (MAX priority with ringtone)
             val callChannel = NotificationChannel(
                 CHANNEL_CALLS,
                 "Incoming Calls",
-                NotificationManager.IMPORTANCE_HIGH
+                NotificationManager.IMPORTANCE_MAX
             ).apply {
                 description = "Audio and video call notifications"
                 setSound(
@@ -53,6 +56,8 @@ object NotificationHelper {
                         .build()
                 )
                 enableVibration(true)
+                enableLights(true)
+                setBypassDnd(true)  // Allow sound even in Do Not Disturb mode
                 vibrationPattern = longArrayOf(0, 1000, 500, 1000, 500, 1000)
                 lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             }
@@ -97,9 +102,11 @@ object NotificationHelper {
     }
 
     fun postMessageNotification(context: Context, id: Int, senderName: String, messageBody: String) {
+        // ✅ SIMPLE: Direct intent to MainActivity
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
+        
         val pendingIntent = PendingIntent.getActivity(
             context, id, launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -109,7 +116,6 @@ object NotificationHelper {
             .setSmallIcon(android.R.drawable.ic_dialog_email)
             .setContentTitle("Message from $senderName")
             .setContentText(messageBody.take(100))
-            .setStyle(NotificationCompat.BigTextStyle().bigText(messageBody))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
@@ -127,87 +133,57 @@ object NotificationHelper {
         callerName: String,
         callType: String
     ) {
-        // Create intent that launches MainActivity with call data
-        val launchIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_FROM_BACKGROUND
+        Log.d("NotificationHelper", "📢 postIncomingCallNotification: callId=$callId, caller=$callerName")
+        
+        val intent = Intent(context, IncomingCallActivity::class.java).apply {
+            action = "com.familyconnect.app.INCOMING_CALL"
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra(EXTRA_CALL_ID, callId)
             putExtra(EXTRA_THREAD_ID, threadId)
             putExtra(EXTRA_CALLER_NAME, callerName)
-            putExtra("action", "incoming_call")
+            putExtra(EXTRA_CALL_TYPE, callType)
         }
-        
-        // Pending intent for full-screen display (lock screen)
-        val fullScreenIntent = PendingIntent.getActivity(
-            context, 
-            callId.hashCode(), 
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        
-        // Pending intent for tapping the notification body
-        val contentIntent = PendingIntent.getActivity(
+
+        // Use FLAG_IMMUTABLE with unique requestCode based on callId
+        val requestCode = Math.abs(callId.hashCode())
+        val pendingIntent = PendingIntent.getActivity(
             context,
-            callId.hashCode() + 100,
-            launchIntent,
+            requestCode,
+            intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val acceptIntent = Intent(context, CallActionReceiver::class.java).apply {
-            action = ACTION_ACCEPT_CALL
-            putExtra(EXTRA_CALL_ID, callId)
-            putExtra(EXTRA_THREAD_ID, threadId)
-            putExtra(EXTRA_CALLER_NAME, callerName)
-        }
-        val acceptPendingIntent = PendingIntent.getBroadcast(
-            context, callId.hashCode() + 1000, acceptIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val rejectIntent = Intent(context, CallActionReceiver::class.java).apply {
-            action = ACTION_REJECT_CALL
-            putExtra(EXTRA_CALL_ID, callId)
-            putExtra(EXTRA_THREAD_ID, threadId)
-        }
-        val rejectPendingIntent = PendingIntent.getBroadcast(
-            context, callId.hashCode() + 2000, rejectIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val callLabel = if (callType == "video") "Incoming Video Call" else "Incoming Audio Call"
+        // Generate unique notification ID
+        val notificationId = Math.abs(callId.hashCode())
+        
+        Log.d("NotificationHelper", "   📋 Notification ID: $notificationId, Request Code: $requestCode")
+        Log.d("NotificationHelper", "   🔗 PendingIntent created for IncomingCallActivity")
 
         val notification = NotificationCompat.Builder(context, CHANNEL_CALLS)
             .setSmallIcon(android.R.drawable.ic_menu_call)
-            .setContentTitle(callLabel)
+            .setContentTitle("📞 Incoming Call")
             .setContentText("$callerName is calling...")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$callerName is calling you"))
+            .setContentIntent(pendingIntent)
+            .setFullScreenIntent(pendingIntent, true)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
-            .setAutoCancel(false)
-            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
-            .setVibrate(longArrayOf(0, 1000, 500, 1000, 500, 1000))
-            .setFullScreenIntent(fullScreenIntent, true)
-            .setContentIntent(contentIntent)  // ✅ THIS WAS MISSING - handles tapping the notification
-            .addAction(android.R.drawable.ic_menu_call, "Accept", acceptPendingIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Reject", rejectPendingIntent)
-            .setColorized(true)
-            .setColor(0xFF6366F1.toInt())
+            .setAutoCancel(false)  // Don't auto-cancel so user intentionally dismisses
+            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))  // Explicit sound
+            .setVibrate(longArrayOf(0, 500, 300, 500))  // Vibration pattern
             .build()
 
-        android.util.Log.d("NotificationHelper", "🔔 POSTING CALL NOTIFICATION: callId=$callId, callerName=$callerName")
-        runCatching {
-            NotificationManagerCompat.from(context).notify(CALL_NOTIFICATION_ID, notification)
-            android.util.Log.d("NotificationHelper", "✅ Notification posted successfully")
-        }.onFailure {
-            android.util.Log.e("NotificationHelper", "❌ Failed to post notification: ${it.message}")
+        try {
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
+            Log.d("NotificationHelper", "✅ Notification posted successfully with ID: $notificationId")
+        } catch (e: Exception) {
+            Log.e("NotificationHelper", "❌ Error posting notification: ${e.message}", e)
         }
     }
 
-    fun cancelCallNotification(context: Context) {
-        NotificationManagerCompat.from(context).cancel(CALL_NOTIFICATION_ID)
+    fun cancelCallNotification(context: Context, callId: String) {
+        val notificationId = callId.hashCode().let { if (it < 0) -it else it }
+        NotificationManagerCompat.from(context).cancel(notificationId)
     }
 }

@@ -34,6 +34,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.firebase.storage.FirebaseStorage
+import com.familyconnect.app.notifications.FCMService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.flatMapLatest
@@ -244,8 +245,11 @@ class FamilyViewModel(
                         if (result != null) {
                             currentUser = result
                             repository.setUserOnline(result.mobile, result.name)
-                            startObservingIncomingCalls()
-                            refreshLocation()
+                        
+                        // 🔔 CRITICAL FIX: Save FCM token for this user
+                        Log.d("🔥 FamilyViewModel", "💾 Saving FCM token for user: ${result.mobile}")
+                        FCMService.saveFCMTokenForUser(context, result.mobile)
+                        
                             
                             // Start observing chat threads for this user
                             // Use launchIn instead of collect to avoid blocking
@@ -253,11 +257,14 @@ class FamilyViewModel(
                                 .onEach { threads -> _userChatThreadsFlow.value = threads }
                                 .launchIn(viewModelScope)
                             
-                            // Start background listener service with error handling
+            // Start background listener service with error handling  
                             try {
+                                Log.d("FamilyViewModel", "🔔 STARTING CallListenerService for: ${result.mobile}")
                                 CallListenerService.start(context, result.mobile, result.name)
+                                Log.d("FamilyViewModel", "✅ CallListenerService started successfully")
                             } catch (e: Exception) {
-                                Log.e("FamilyViewModel", "Failed to start CallListenerService on session restore: ${e.message}", e)
+                                Log.e("FamilyViewModel", "❌ Failed to start CallListenerService on session restore: ${e.message}", e)
+                                e.printStackTrace()
                             }
                         }
                     }
@@ -286,6 +293,10 @@ class FamilyViewModel(
                         
                         Log.d("🔥 FamilyViewModel", "🔥 Setting user online in Firebase...")
                         repository.setUserOnline(result.mobile, result.name)
+                        
+                        // 🔔 CRITICAL FIX: Save FCM token for this user
+                        Log.d("🔥 FamilyViewModel", "💾 Saving FCM token for user: ${result.mobile}")
+                        FCMService.saveFCMTokenForUser(context, result.mobile)
                         
                         Log.d("🔥 FamilyViewModel", "📞 Starting incoming calls observer...")
                         startObservingIncomingCalls()
@@ -743,7 +754,15 @@ class FamilyViewModel(
                         }
 
                         if (callState.status == CallStatus.IDLE && callId.isNotBlank()) {
-                            val incomingCallType = if ((incoming["callType"] as? String) == "video") CallType.VIDEO else CallType.AUDIO
+                            val callTypeFromFirebase = incoming["callType"] as? String
+                            val incomingCallType = if (callTypeFromFirebase == "video") CallType.VIDEO else CallType.AUDIO
+                            
+                            Log.d("FamilyViewModel", "📞 INCOMING CALL DETECTED:")
+                            Log.d("FamilyViewModel", "   callId=$callId")
+                            Log.d("FamilyViewModel", "   from=$fromName")
+                            Log.d("FamilyViewModel", "   callType from Firebase: '$callTypeFromFirebase' ⭐⭐⭐")
+                            Log.d("FamilyViewModel", "   parsed as: $incomingCallType")
+                            
                             callState = callState.copy(
                                 status = CallStatus.RINGING,
                                 callType = incomingCallType,
@@ -780,6 +799,9 @@ class FamilyViewModel(
         currentUser?.let { user ->
             viewModelScope.launch {
                 val callId = UUID.randomUUID().toString()
+                
+                // ✅ FIX: Log callType BEFORE updating state
+                Log.d("FamilyViewModel", "🔔 INITIATING CALL: callType=${callState.callType}")
                 Log.d("FamilyViewModel", "🔔 INITIATING CALL: from=${user.mobile}, to=$toUserId, threadId=$threadId, callId=$callId")
 
                 // Update UI immediately so user sees call start feedback
@@ -791,7 +813,22 @@ class FamilyViewModel(
                     incomingCallRequest = null,
                     callDuration = 0,
                     isCallConnected = false
+                    // ✅ FIX: PRESERVE callType that was set by initiateVideoCallForSelectedThread()
+                    // callType is already set before initiateCall() is called, don't overwrite it
                 )
+                
+                // ✅ Log callType AFTER update to verify it's preserved
+                Log.d("FamilyViewModel", "✅ After copy(): callState.callType=${callState.callType}")
+                
+                // 🔥 CRITICAL FIX: Initialize WebRTC immediately for caller with correct video flag
+                Log.d("FamilyViewModel", "🎬 Initializing WebRTC IMMEDIATELY for caller with callType=${callState.callType}")
+                try {
+                    initializeWebRtcSession(threadId, callId, isCaller = true)
+                    Log.d("FamilyViewModel", "✅ Caller WebRTC initialized with Video=${callState.callType == CallType.VIDEO}")
+                } catch (e: Exception) {
+                    Log.e("FamilyViewModel", "❌ Failed to initialize WebRTC: ${e.message}", e)
+                }
+                
                 observeActiveCall(callId, threadId, isCaller = true)
 
                 repository.sendCallRequest(
@@ -868,7 +905,11 @@ class FamilyViewModel(
             thread.participant1Name
         }
 
+        Log.d("FamilyViewModel", "🎬 initiateCallForSelectedThread called with callType=$callType")
+        Log.d("FamilyViewModel", "   Setting: callState.callType = $callType")
         callState = callState.copy(callType = callType)
+        Log.d("FamilyViewModel", "   After copy: callState.callType=${callState.callType}")
+        
         initiateCall(recipientMobile, thread.threadId, otherName.ifBlank { "User" })
     }
 
@@ -886,18 +927,55 @@ class FamilyViewModel(
         callState = callState.copy(isFrontCamera = !callState.isFrontCamera)
     }
 
-    fun acceptCall(callId: String, threadId: String, fromUserNameOverride: String? = null) {
-        Log.d("FamilyViewModel", "📞 acceptCall invoked: callId=$callId, threadId=$threadId, currentUser=${currentUser?.mobile}")
+    /**
+     * Set incoming call state to RINGING when notification is received.
+     * This just shows the IncomingCallOverlay - does NOT auto-accept the call.
+     * The user must click Accept button to actually accept.
+     */
+    fun setIncomingCallRinging(callId: String, threadId: String, callerName: String, callType: String = "audio") {
+        Log.d("FamilyViewModel", "📞 setIncomingCallRinging: callId=$callId, from=$callerName, type=$callType ⭐")
         
-        // Update call state immediately, don't wait for currentUser
-        val fromUserName =
-            fromUserNameOverride
-                ?: callState.incomingCallRequest?.fromUserName
-                ?: incomingCallRequests.value.firstOrNull {
-                    (it["callId"] as? String ?: "") == callId
-                }?.get("fromUserName") as? String
-                ?: "User"
+        val incomingCallType = if (callType == "video") CallType.VIDEO else CallType.AUDIO
+        
+        Log.d("FamilyViewModel", "   📱 Parsed callType: $incomingCallType")
+        
+        val callRequest = CallRequest(
+            callId = callId,
+            threadId = threadId,
+            fromUserName = callerName,
+            status = "pending",
+            callType = callType  // ← CRITICAL: Pass the actual callType!
+        )
+        
+        callState = callState.copy(
+            status = CallStatus.RINGING,
+            incomingCallRequest = callRequest,
+            callType = incomingCallType
+        )
+        
+        Log.d("FamilyViewModel", "✅ Call state set to RINGING with callType=$incomingCallType (waiting for Accept/Reject)")
+    }
 
+    fun acceptCall(callId: String, threadId: String, fromUserNameOverride: String? = null) {
+        val TAG = "FamilyViewModel.acceptCall"
+        Log.d(TAG, "📞 START: callId=$callId, threadId=$threadId")
+        Log.d(TAG, "   Current callType: ${callState.callType}")
+        
+        // Step 1: Extract caller name and verify call type
+        val fromUserName = fromUserNameOverride 
+            ?: callState.incomingCallRequest?.fromUserName 
+            ?: "User"
+        
+        // CRITICAL: Get the call type from incoming request
+        val incomingCallType = callState.incomingCallRequest?.let { 
+            val type = it.callType  // ← Direct property access (CallRequest object)
+            if (type == "video") CallType.VIDEO else CallType.AUDIO
+        } ?: callState.callType
+        
+        Log.d(TAG, "✅ Step 1: fromUserName=$fromUserName")
+        Log.d(TAG, "   📱 incomingCallType from request: $incomingCallType")
+        
+        // Step 2: Update local state immediately - PRESERVE CALL TYPE
         incomingActionInProgress = true
         callState = callState.copy(
             status = CallStatus.CONNECTING,
@@ -906,33 +984,54 @@ class FamilyViewModel(
             activeThreadId = threadId,
             activeCallPartyName = fromUserName,
             isCallConnected = false,
-            callDuration = 0
+            callDuration = 0,
+            callType = incomingCallType  // ← PRESERVE THE INCOMING CALL TYPE!
         )
-        Log.d("FamilyViewModel", "✅ Call state updated to CONNECTING. callState.status=${callState.status}")
-
-        // Now handle the rest asynchronously
-        currentUser?.let {
-            viewModelScope.launch {
-                Log.d("FamilyViewModel", "🔐 User is authenticated, updating Firebase...")
-                repository.updateCallStatus(threadId, callId, "accepted") { success ->
-                    incomingActionInProgress = false
-                    if (success) {
-                        Log.d("FamilyViewModel", "✅ Firebase call status updated to accepted")
-                        _incomingCallRequests.value = incomingCallRequests.value.filter {
-                            (it["callId"] as? String ?: "") != callId
-                        }
-                        initializeWebRtcSession(threadId, callId, isCaller = false)
-                        observeActiveCall(callId, threadId, isCaller = false)
-                    } else {
-                        Log.e("FamilyViewModel", "❌ Failed to update call status in Firebase")
-                        resetCallState()
-                    }
-                }
-            }
-        } ?: run {
-            Log.w("FamilyViewModel", "⚠️ User not authenticated yet. Will update Firebase after login.")
+        Log.d(TAG, "✅ Step 2: Local state updated to CONNECTING with callType=$incomingCallType")
+        
+        // Step 3: Update Firebase status - CRITICAL PART
+        Log.d(TAG, "📡 Step 3: Updating Firebase status to 'accepted'...")
+        repository.updateCallStatus(threadId, callId, "accepted") { success ->
+            Log.d(TAG, "📡 Firebase callback: success=$success")
+            
             incomingActionInProgress = false
+            
+            if (success) {
+                Log.d(TAG, "✅ Step 4: Firebase updated successfully")
+                
+                // Clear from incoming requests
+                _incomingCallRequests.value = incomingCallRequests.value.filter {
+                    (it["callId"] as? String ?: "") != callId
+                }
+                Log.d(TAG, "✅ Step 5: Cleared from incoming requests")
+                
+                // Step 6: Initialize WebRTC with the correct call type
+                Log.d(TAG, "🎬 Step 6: Initializing WebRTC with ${callState.callType}...")
+                try {
+                    initializeWebRtcSession(threadId, callId, isCaller = false)
+                    Log.d(TAG, "✅ Step 6a: WebRTC session initialized with callType=${callState.callType}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Step 6a: WebRTC init failed: ${e.message}", e)
+                }
+                
+                // Step 7: Observe the active call
+                Log.d(TAG, "👁️  Step 7: Observing active call...")
+                try {
+                    observeActiveCall(callId, threadId, isCaller = false)
+                    Log.d(TAG, "✅ Step 7: Now observing active call")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Step 7: observeActiveCall failed: ${e.message}", e)
+                }
+                
+                Log.d(TAG, "✅✅✅ ACCEPT COMPLETED SUCCESSFULLY with callType=${callState.callType}")
+                
+            } else {
+                Log.e(TAG, "❌ Step 4: Firebase update FAILED")
+                resetCallState()
+            }
         }
+        
+        Log.d(TAG, "📞 END: Function returned (Firebase callback pending)")
     }
 
     fun rejectCall(callId: String, threadId: String) {
@@ -995,10 +1094,10 @@ class FamilyViewModel(
                 when (status) {
                     "accepted" -> {
                         if (callState.activeCallId == callId && callState.activeThreadId == threadId) {
+                            Log.d("FamilyViewModel", "📱 Call status: ACCEPTED - Remote peer ready for signaling")
                             callState = callState.copy(status = CallStatus.CONNECTING)
-                            if (isCaller && signalingObserverJob == null) {
-                                initializeWebRtcSession(threadId, callId, isCaller = true)
-                            }
+                            // ✅ WebRTC already initialized by caller in initiateCall() when button pressed
+                            // ✅ signaling observer already running, just continue normally
                         }
                     }
                     "rejected" -> resetCallState(ended = true)
