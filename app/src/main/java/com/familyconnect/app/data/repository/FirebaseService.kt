@@ -1,6 +1,8 @@
 package com.familyconnect.app.data.repository
 
 import android.util.Log
+import android.widget.Toast
+import android.app.Application
 import com.familyconnect.app.data.model.ChatMessageData
 import com.familyconnect.app.data.model.ChatThread
 import com.familyconnect.app.data.model.OnlineUser
@@ -20,11 +22,22 @@ import java.util.UUID
 object FirebaseService {
     private const val TAG = "FirebaseService"
     private val database = FirebaseDatabase.getInstance("https://family-connect-app-a219b-default-rtdb.asia-southeast1.firebasedatabase.app")
+    private var appContext: Application? = null
 
     // Reference paths
     private const val PRESENCE_PATH = "presence"
     private const val CHATS_PATH = "chats"
     private const val MESSAGES_PATH = "messages"
+    
+    fun setAppContext(context: Application) {
+        appContext = context
+    }
+    
+    private fun showToast(msg: String) {
+        appContext?.let {
+            Toast.makeText(it, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     fun setUserOnline(mobile: String, userName: String) {
         try {
@@ -276,6 +289,63 @@ object FirebaseService {
             awaitClose { messagesRef.removeEventListener(listener) }
         } catch (e: Exception) {
             Log.e(TAG, "Error in observeThreadMessages: ${e.message}")
+            close(e)
+        }
+    }
+
+    // 📝 Observe typing status for a thread (excludes current user)
+    fun observeTypingStatus(threadId: String, currentUserMobile: String): Flow<List<com.familyconnect.app.data.model.TypingStatus>> = callbackFlow {
+        try {
+            val path = "typing/$threadId"
+            Log.d(TAG, "Listening: $path")
+            
+            val typingRef = database.getReference(path)
+            val typingMap = mutableMapOf<String, com.familyconnect.app.data.model.TypingStatus>()
+            
+            val listener = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    try {
+                        typingMap.clear()
+                        for (child in snapshot.children) {
+                            val mobile = child.key ?: continue
+                            if (mobile == currentUserMobile) continue
+                            
+                            val name = child.child("name").value as? String ?: ""
+                            val timestamp = child.child("timestamp").value as? Long ?: 0
+                            
+                            // Only show typing if timestamp is recent (within 10 seconds)
+                            val now = System.currentTimeMillis()
+                            val isRecent = (now - timestamp) < 10000  // 10 seconds
+                            
+                            if (name.isNotBlank() && timestamp > 0 && isRecent) {
+                                typingMap[mobile] = com.familyconnect.app.data.model.TypingStatus(
+                                    userMobile = mobile,
+                                    userName = name,
+                                    timestamp = timestamp,
+                                    isTyping = true
+                                )
+                                Log.d(TAG, "Typing: $name (fresh)")
+                            }
+                        }
+                        trySend(typingMap.values.toList())
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error parsing typing data", e)
+                    }
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    Log.e(TAG, "Listener error: ${error.message}")
+                }
+            }
+            
+            typingRef.addValueEventListener(listener)
+            Log.d(TAG, "Listener attached")
+            
+            awaitClose { 
+                typingRef.removeEventListener(listener)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in observeTypingStatus", e)
             close(e)
         }
     }

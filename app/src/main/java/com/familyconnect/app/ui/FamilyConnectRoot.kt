@@ -109,6 +109,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.content.ContextCompat
 import com.familyconnect.app.FamilyConnectApp
 import com.familyconnect.app.data.model.ChatMessageData
+import com.familyconnect.app.data.model.FamilyEvent
 import com.familyconnect.app.webrtc.CallType
 import com.familyconnect.app.data.model.FamilyRole
 import com.familyconnect.app.ui.theme.FamilyConnectTheme
@@ -116,6 +117,7 @@ import com.familyconnect.app.webrtc.CallStatus
 
 private enum class HomeTab {
     CHAT,
+    EVENTS,
     SETTINGS
 }
 
@@ -151,16 +153,10 @@ fun FamilyConnectRoot(viewModel: FamilyViewModel) {
         val pendingCallValue = app.pendingCallIntent.value
         if (pendingCallValue != null) {
             Log.d("FamilyConnectRoot", "🔔 LaunchedEffect: PENDING CALL DETECTED: ${pendingCallValue.callId}")
-            Log.d("FamilyConnectRoot", "   Setting call state to RINGING to show UI with Accept/Reject buttons...")
+            Log.d("FamilyConnectRoot", "   Clearing pending call and accepting...")
             app.setPendingCall(null)
-            // Set state to RINGING so user sees the IncomingCallOverlay with Accept/Reject buttons
-            viewModel.setIncomingCallRinging(
-                callId = pendingCallValue.callId,
-                threadId = pendingCallValue.threadId,
-                callerName = pendingCallValue.callerName,
-                callType = pendingCallValue.callType
-            )
-            Log.d("FamilyConnectRoot", "✅ LaunchedEffect: setIncomingCallRinging invoked - IncomingCallOverlay with buttons should now show")
+            viewModel.acceptCall(pendingCallValue.callId, pendingCallValue.threadId, pendingCallValue.callerName)
+            Log.d("FamilyConnectRoot", "✅ LaunchedEffect: acceptCall invoked")
         }
     }
     
@@ -168,42 +164,19 @@ fun FamilyConnectRoot(viewModel: FamilyViewModel) {
         Surface(modifier = Modifier.fillMaxSize()) {
             // Explicitly check all possible call states
             val isIncomingCall = callState.status == CallStatus.REQUESTING ||
-                    callState.status == CallStatus.RINGING ||
                     callState.status == CallStatus.CONNECTING ||
                     callState.status == CallStatus.ACTIVE
             
             val app = context.applicationContext as com.familyconnect.app.FamilyConnectApp
-            val hasPendingCall = app.pendingCallIntent.value != null
+            val pendingCall = app.pendingCallIntent.collectAsState()
+            val hasPendingCall = pendingCall.value != null
             
-            Log.d("FamilyConnectRoot", "📱 Rendering: isIncoming=$isIncomingCall, status=${callState.status}, pending=$hasPendingCall, incomingRequest=${callState.incomingCallRequest != null}")
+            Log.d("FamilyConnectRoot", "📱 Rendering (key=$callKey): isIncoming=$isIncomingCall, pending=$hasPendingCall, status=${callState.status}")
             
-            // PRIORITY 1: Show IncomingCallOverlay with buttons if RINGING with request
-            if (callState.status == CallStatus.RINGING && callState.incomingCallRequest != null) {
-                Log.d("FamilyConnectRoot", "🎯 RENDERING INCOMING CALL OVERLAY (with Accept/Reject buttons) ✅")
-                IncomingCallOverlay(
-                    callerName = callState.incomingCallRequest.fromUserName.ifBlank { "Unknown" },
-                    isVideoCall = callState.callType == CallType.VIDEO,
-                    onAccept = {
-                        Log.d("FamilyConnectRoot", "✅ ACCEPT button tapped")
-                        // Accept the call directly (permissions already granted during login)
-                        viewModel.acceptCall(
-                            callState.incomingCallRequest.callId,
-                            callState.incomingCallRequest.threadId,
-                            callState.incomingCallRequest.fromUserName
-                        )
-                    },
-                    onReject = {
-                        Log.d("FamilyConnectRoot", "❌ REJECT button tapped")
-                        viewModel.rejectCall(
-                            callState.incomingCallRequest.callId,
-                            callState.incomingCallRequest.threadId
-                        )
-                    }
-                )
-            }
-            // PRIORITY 2: Show active call screen when CONNECTING or ACTIVE
-            else if (callState.status == CallStatus.CONNECTING || callState.status == CallStatus.ACTIVE) {
-                Log.d("FamilyConnectRoot", "🎯 RENDERING ACTIVE CALL SCREEN ✅")
+            // PRIORITY 1: Always show call screen if ANY call state exists
+            when {
+                isIncomingCall -> {
+                    Log.d("FamilyConnectRoot", "🎯 RENDERING CALL SCREEN ✅")
                     if (callState.callType == CallType.VIDEO) {
                         VideoCallScreen(
                             threadName = callState.activeCallPartyName ?: "Unknown",
@@ -223,16 +196,28 @@ fun FamilyConnectRoot(viewModel: FamilyViewModel) {
                             onEndCall = { viewModel.endCall(callState.activeThreadId) }
                         )
                     }
-            }
-            // PRIORITY 3: Show HomeScreen with Scaffold if no call
-            else if (viewModel.currentUser != null) {
-                Log.d("FamilyConnectRoot", "🏠 RENDERING HOME SCREEN ✅")
-                HomeScreen(viewModel = viewModel)
-            }
-            // PRIORITY 4: Show AuthScreen if not logged in
-            else {
-                Log.d("FamilyConnectRoot", "🔐 RENDERING AUTH SCREEN ✅")
-                AuthScreen(viewModel = viewModel)
+                }
+                
+                hasPendingCall -> {
+                    Log.d("FamilyConnectRoot", "⏳ Pending call detected, showing loading state")
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("Incoming call...", style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+                
+                viewModel.currentUser == null -> {
+                    Log.d("FamilyConnectRoot", "📱 No user logged in → AuthScreen")
+                    AuthScreen(viewModel = viewModel)
+                }
+                
+                else -> {
+                    Log.d("FamilyConnectRoot", "🏠 User logged in → HomeScreen")
+                    HomeScreen(viewModel = viewModel)
+                }
             }
         }
     }
@@ -517,7 +502,6 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
 
     // Determine if a full-screen call overlay should be shown
     val isInCall = callState.status == CallStatus.REQUESTING ||
-            callState.status == CallStatus.RINGING ||
             callState.status == CallStatus.CONNECTING ||
             callState.status == CallStatus.ACTIVE
 
@@ -576,6 +560,12 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
                             label = { Text("💬 Chat", style = MaterialTheme.typography.labelSmall) }
                         )
                         NavigationBarItem(
+                            selected = selectedTab == HomeTab.EVENTS,
+                            onClick = { selectedTab = HomeTab.EVENTS },
+                            icon = { Icon(Icons.Default.DateRange, contentDescription = "Events", modifier = Modifier.size(24.dp)) },
+                            label = { Text("🎉 Events", style = MaterialTheme.typography.labelSmall) }
+                        )
+                        NavigationBarItem(
                             selected = selectedTab == HomeTab.SETTINGS,
                             onClick = { selectedTab = HomeTab.SETTINGS },
                             icon = { Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(24.dp)) },
@@ -601,8 +591,31 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
                                 }
                             }
                         )
+                        HomeTab.EVENTS -> EventsScreen(viewModel)
                         HomeTab.SETTINGS -> SettingsScreen(viewModel, user.role)
                     }
+                }
+
+                if (callState.status == CallStatus.RINGING && callState.incomingCallRequest != null) {
+                    IncomingCallOverlay(
+                        callerName = callState.incomingCallRequest.fromUserName.ifBlank { "Unknown" },
+                        isVideoCall = callState.callType == CallType.VIDEO,
+                        onAccept = {
+                            runWithCallPermissions(needCamera = callState.callType == CallType.VIDEO) {
+                                viewModel.acceptCall(
+                                    callState.incomingCallRequest.callId,
+                                    callState.incomingCallRequest.threadId,
+                                    callState.incomingCallRequest.fromUserName
+                                )
+                            }
+                        },
+                        onReject = {
+                            viewModel.rejectCall(
+                                callState.incomingCallRequest.callId,
+                                callState.incomingCallRequest.threadId
+                            )
+                        }
+                    )
                 }
             }
         }
@@ -807,7 +820,22 @@ private fun CalendarScreen(viewModel: FamilyViewModel, canEdit: Boolean) {
                 Button(
                     onClick = {
                         if (title.isNotBlank() && dateTime.isNotBlank()) {
-                            viewModel.addEvent(title, dateTime, colorTag, recurring, reminder.toIntOrNull() ?: 30)
+                            // Create a FamilyEvent from the UI input
+                            val event = FamilyEvent(
+                                id = System.currentTimeMillis().toInt(),
+                                title = title,
+                                description = "",
+                                location = "",
+                                dateTime = 0L,  // Parse from dateTime string if needed
+                                colorTag = colorTag,
+                                category = "Other",
+                                recurring = recurring,
+                                reminderMinutes = reminder.toIntOrNull() ?: 30,
+                                invitedMembers = emptyList(),
+                                createdBy = "",
+                                createdAtEpochMillis = System.currentTimeMillis()
+                            )
+                            viewModel.addEvent(event)
                             title = ""
                             dateTime = ""
                         }
@@ -839,8 +867,11 @@ private fun ChatScreen(
     onStartVideoCall: () -> Unit = {}
 ) {
     val onlineUsers by viewModel.onlineUsers.collectAsState(initial = emptyList())
+    val userChatThreads by viewModel.userChatThreads.collectAsState(initial = emptyList())
     val selectedThread = viewModel.selectedChatThread
     val threadMessages by viewModel.currentThreadMessages.collectAsState(initial = emptyList())
+    val typingUsers by viewModel.typingStatus.collectAsState(initial = emptyList())
+    val typingByUser by viewModel.typingByUser.collectAsState(initial = emptyMap())
     var messageBody by remember { mutableStateOf("") }
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showAttachActions by remember { mutableStateOf(false) }
@@ -1050,22 +1081,34 @@ private fun ChatScreen(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     modifier = Modifier.padding(top = 2.dp)
                                 ) {
+                                    // 📝 Check if user is typing
+                                    val isUserTyping = typingByUser[user.mobile] ?: false
+                                    
                                     Box(
                                         modifier = Modifier
                                             .size(6.dp)
                                             .background(
-                                                color = if (user.isOnline) Color(0xFF4CAF50) else Color(0xFF999999),
+                                                color = when {
+                                                    isUserTyping -> Color(0xFF6C63FF) // Purple for typing
+                                                    user.isOnline -> Color(0xFF4CAF50)
+                                                    else -> Color(0xFF999999)
+                                                },
                                                 shape = RoundedCornerShape(50.dp)
                                             )
                                     )
-                                    // Show "typing..." if user is typing, otherwise show status
-                                    val isTyping = viewModel.isUserTyping(user.mobile)
+                                    // Show "Typing...", "Active now" or "Last seen"
                                     Text(
-                                        if (isTyping) "typing..."
-                                        else if (user.isOnline) "Active now"
-                                        else viewModel.formatLastSeen(user.lastSeen).ifBlank { "Offline" },
+                                        when {
+                                            isUserTyping -> "Typing..."
+                                            user.isOnline -> "Active now"
+                                            else -> viewModel.formatLastSeen(user.lastSeen).ifBlank { "Offline" }
+                                        },
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (isTyping) Color(0xFF6366F1) else if (user.isOnline) Color(0xFF4CAF50) else Color(0xFF999999),
+                                        color = when {
+                                            isUserTyping -> Color(0xFF6C63FF) // Purple for typing
+                                            user.isOnline -> Color(0xFF4CAF50)
+                                            else -> Color(0xFF999999)
+                                        },
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 11.sp
                                     )
@@ -1415,8 +1458,63 @@ private fun ChatScreen(
                                                 MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
                                         )
                                     }
+                                    // 🔵 Read Receipt Ticks - WhatsApp style
+                                    if (isCurrentUser) {
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        if (message.read) {
+                                            // 🔵 Blue double tick for read
+                                            Text(
+                                                "✔✔",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = Color(0xFF00B4D8),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 10.sp,
+                                                letterSpacing = (-1).sp
+                                            )
+                                        } else {
+                                            // ⚫ Black double tick for sent
+                                            Text(
+                                                "✔✔",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 10.sp,
+                                                letterSpacing = (-1).sp
+                                            )
+                                        }
+                                    }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // 📝 Typing Indicator - Show when other users are typing
+            if (typingUsers.isNotEmpty()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.background),
+                    color = Color.Transparent
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val typingText = if (typingUsers.size == 1) {
+                                "✏️ ${typingUsers[0].userName} is typing..."
+                            } else {
+                                "✏️ ${typingUsers.size} people are typing..."
+                            }
+                            Text(
+                                typingText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF6C63FF),
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                            )
                         }
                     }
                 }
@@ -1598,7 +1696,13 @@ private fun ChatScreen(
                         ) { Icon(Icons.Filled.AttachFile, contentDescription = "Attach", tint = Color.White, modifier = Modifier.size(20.dp)) }
                         OutlinedTextField(
                             messageBody,
-                            { messageBody = it },
+                            { 
+                                messageBody = it
+                                // 📝 Notify typing when user types (with debounce)
+                                if (messageBody.isNotBlank()) {
+                                    viewModel.onTextChanged()
+                                }
+                            },
                             placeholder = { Text("Type a message...", style = MaterialTheme.typography.bodyMedium, color = Color(0xFFAAAAAA)) },
                             modifier = Modifier.weight(1f).heightIn(min = 42.dp),
                             shape = RoundedCornerShape(22.dp),
@@ -1649,6 +1753,32 @@ private fun AudioCallScreen(
         CallStatus.ACTIVE -> formatCallDuration(callState.callDuration)
         CallStatus.ENDED -> "Call ended"
         else -> "Waiting..."
+    }
+
+    // 🔊 Play dialing tone while calling
+    val context = LocalContext.current
+    val ringtone = remember {
+        runCatching {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            RingtoneManager.getRingtone(context, uri)
+        }.getOrNull()
+    }
+
+    DisposableEffect(callState.status) {
+        // Play ringtone when caller is waiting (REQUESTING or CONNECTING)
+        if (callState.status == CallStatus.REQUESTING || callState.status == CallStatus.CONNECTING) {
+            try {
+                ringtone?.play()
+            } catch (_: Exception) {
+            }
+        }
+        
+        onDispose {
+            try {
+                ringtone?.stop()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     Surface(
@@ -1964,6 +2094,32 @@ private fun VideoCallScreen(
         CallStatus.ACTIVE -> formatCallDuration(callState.callDuration)
         CallStatus.ENDED -> "Call ended"
         else -> "Waiting..."
+    }
+
+    // 🔊 Play dialing tone while video calling
+    val context = LocalContext.current
+    val ringtone = remember {
+        runCatching {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            RingtoneManager.getRingtone(context, uri)
+        }.getOrNull()
+    }
+
+    DisposableEffect(callState.status) {
+        // Play ringtone when caller is waiting (REQUESTING or CONNECTING)
+        if (callState.status == CallStatus.REQUESTING || callState.status == CallStatus.CONNECTING) {
+            try {
+                ringtone?.play()
+            } catch (_: Exception) {
+            }
+        }
+        
+        onDispose {
+            try {
+                ringtone?.stop()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     // Track whether the remote video has arrived so we can trigger recomposition

@@ -2,12 +2,13 @@ package com.familyconnect.app.notifications
 
 import android.app.Service
 import android.content.Intent
+import android.content.Context
 import android.os.IBinder
+import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import android.app.PendingIntent
-import com.familyconnect.app.IncomingCallActivity
+import android.telecom.TelecomManager
 
 class CallForegroundService : Service() {
     
@@ -32,79 +33,78 @@ class CallForegroundService : Service() {
         return START_NOT_STICKY
     }
 
+    @androidx.annotation.RequiresPermission(android.Manifest.permission.READ_PHONE_STATE)
     private fun triggerIncomingCall(
         callId: String,
         threadId: String,
         callerName: String,
         callType: String
     ) {
-        Log.d(TAG, "   🔥 triggerIncomingCall() starting...")
+        Log.d(TAG, "🔥 triggerIncomingCall() - Using TELECOM (not notifications)")
         
-        // 🔥 CRITICAL FIX: Strong PendingIntent configuration for background launches
-        val fullScreenIntent = Intent(this, IncomingCallActivity::class.java).apply {
-            action = "INCOMING_CALL"
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra(NotificationHelper.EXTRA_CALL_ID, callId)
-            putExtra(NotificationHelper.EXTRA_THREAD_ID, threadId)
-            putExtra(NotificationHelper.EXTRA_CALLER_NAME, callerName)
-            putExtra(NotificationHelper.EXTRA_CALL_TYPE, callType)
+        // 🔥 DEBUG: Log ALL data before creating bundle
+        Log.e("CALL_DEBUG", "🔥 CREATING TELECOM CALL WITH:")
+        Log.e("CALL_DEBUG", "   callId: $callId")
+        Log.e("CALL_DEBUG", "   threadId: $threadId")
+        Log.e("CALL_DEBUG", "   callerName: $callerName")
+        Log.e("CALL_DEBUG", "   callType: $callType")
+        
+        try {
+            // ✅ CORRECT APPROACH: Use Telecom Framework
+            // This delegates to Android system to show proper call UI
+            // No notifications, no PendingIntent issues, no extras lost
+            
+            // Get phone account handle
+            // We use the one registered during app initialization
+            val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+            
+            // Try to get our registered phone account
+            val phoneAccounts = telecomManager.callCapablePhoneAccounts
+            Log.d(TAG, "Available phone accounts: ${phoneAccounts.size}")
+            
+            val phoneAccountHandle = if (phoneAccounts.isNotEmpty()) {
+                // Use the first available account (ours)
+                phoneAccounts[0]
+            } else {
+                Log.e(TAG, "❌ No phone accounts available")
+                null
+            }
+            
+            // 🔥 CRITICAL: Pass ALL data via Bundle (not extras)
+            // Bundle goes to MyConnectionService.onCreateIncomingConnection()
+            val callExtras = Bundle().apply {
+                putString("callId", callId)
+                putString("threadId", threadId)
+                putString("callerName", callerName)
+                putString("callType", callType)
+            }
+            
+            Log.d(TAG, "   🔥 Calling telecomManager.addNewIncomingCall()...")
+            Log.e("CALL_DEBUG", "✅ Bundle created with all data:")
+            Log.e("CALL_DEBUG", "   callId=${callExtras.getString("callId")}")
+            Log.e("CALL_DEBUG", "   threadId=${callExtras.getString("threadId")}")
+            Log.e("CALL_DEBUG", "   callerName=${callExtras.getString("callerName")}")
+            Log.e("CALL_DEBUG", "   callType=${callExtras.getString("callType")}")
+            
+            if (phoneAccountHandle != null) {
+                telecomManager.addNewIncomingCall(phoneAccountHandle, callExtras)
+                Log.d(TAG, "✅ addNewIncomingCall() succeeded - System UI handling display")
+                Log.e("CALL_DEBUG", "✅ TELECOM CALL INITIATED - Android system will show UI")
+                Toast.makeText(this, "✅ Telecom call routing to system UI", Toast.LENGTH_SHORT).show()
+            } else {
+                Log.e(TAG, "❌ PhoneAccountHandle is null - call cannot be routed")
+                // Fallback: Show minimal foreground notification
+                showFallbackNotification(callerName)
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error in addNewIncomingCall: ${e.message}", e)
+            Log.e("CALL_DEBUG", "❌ Telecom error, falling back to notification:", e)
+            // Fallback to notification
+            showFallbackNotification(callerName)
         }
-
-        // 🔥 CRITICAL: Fixed request code (1001) - NOT 0 - ensures stable PendingIntent
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            1001,
-            fullScreenIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        // 🔥 STEP 1: Create MINIMAL foreground notification FIRST
-        Log.d(TAG, "   ✅ STEP 1: Creating minimal foreground notification...")
-        val tempNotification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
-            .setSmallIcon(android.R.drawable.ic_menu_call)
-            .setContentTitle("Incoming Call")
-            .setContentText("Connecting...")
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-
-        // 🔥 STEP 2: Start foreground BEFORE full-screen notification
-        Log.d(TAG, "   ✅ STEP 2: Starting foreground service...")
-        startForeground(NotificationHelper.CALL_NOTIFICATION_ID, tempNotification)
-        Log.d(TAG, "   ✅ STEP 2: Foreground service started")
-
-        // 🔥 STEP 3: NOW build FULL-SCREEN notification (after foreground established)
-        Log.d(TAG, "   ✅ STEP 3: Building full-screen notification...")
-        val fullScreenNotification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
-            .setSmallIcon(android.R.drawable.ic_menu_call)
-            .setContentTitle("📞 Incoming Call")
-            .setContentText("$callerName is calling...")
-            .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setFullScreenIntent(pendingIntent, true)
-            .setOngoing(true)
-            .setAutoCancel(false)
-            .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE))
-            .setVibrate(longArrayOf(0, 500, 300, 500))
-            .build()
-
-        // 🔥 STEP 4: Update notification (now with full-screen intent)
-        Log.d(TAG, "   ✅ STEP 4: Updating notification with full-screen intent...")
-        val manager = NotificationManagerCompat.from(this)
-        manager.notify(NotificationHelper.CALL_NOTIFICATION_ID, fullScreenNotification)
-        Log.d(TAG, "   ✅ STEP 4: Notification updated")
-
-        // 🔥 STEP 5: Android will launch activity via PendingIntent (NOT via startActivity)
-        // ❌ REMOVED: startActivity(intent) - this is BLOCKED when app is backgrounded
-        // ✅ TRUSTING: PendingIntent in notification to launch IncomingCallActivity
-        Log.d(TAG, "   ✅ STEP 5: Notification with PendingIntent ready (Android will launch activity)")
         
-        Log.d(TAG, "   ✅✅✅ INCOMING CALL NOTIFICATION POSTED SUCCESSFULLY ✅✅✅")
-        
-        // Stop service after a delay
+        // Keep service alive for a bit, then stop
         Thread {
             try {
                 Thread.sleep(1500)
@@ -114,6 +114,21 @@ class CallForegroundService : Service() {
                 Log.e(TAG, "   ⚠️ Error stopping service: ${e.message}")
             }
         }.start()
+    }
+    
+    private fun showFallbackNotification(callerName: String) {
+        // 🔥 FALLBACK: Only if Telecom fails
+        // Create minimal foreground notification
+        Log.d(TAG, "Creating fallback foreground notification...")
+        val tempNotification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
+            .setSmallIcon(android.R.drawable.ic_menu_call)
+            .setContentTitle("Incoming Call")
+            .setContentText("$callerName is calling...")
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        startForeground(NotificationHelper.CALL_NOTIFICATION_ID, tempNotification)
+        Toast.makeText(this, "⚠️ Using fallback notification", Toast.LENGTH_SHORT).show()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

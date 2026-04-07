@@ -4,6 +4,7 @@ import android.content.Context
 import android.location.Geocoder
 import android.net.Uri
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -18,6 +19,7 @@ import com.familyconnect.app.data.model.MediaItem
 import com.familyconnect.app.data.model.NoteItem
 import com.familyconnect.app.data.model.OnlineUser
 import com.familyconnect.app.data.model.TaskItem
+import com.familyconnect.app.data.model.TypingStatus
 import com.familyconnect.app.data.model.UserProfile
 import com.familyconnect.app.data.repository.FamilyRepository
 import com.familyconnect.app.data.repository.UserManagementService
@@ -35,6 +37,8 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.firebase.storage.FirebaseStorage
 import com.familyconnect.app.notifications.FCMService
+import com.familyconnect.app.utils.CredentialsManager
+import com.familyconnect.app.utils.TypingStatusManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.flatMapLatest
@@ -59,6 +63,9 @@ class FamilyViewModel(
     private var previousMessageIds = setOf<String>()
     private val webRTCManager = WebRTCManager(context)
     private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+    
+    // Typing status manager - initialized lazily with viewModelScope and context
+    private val typingStatusManager: TypingStatusManager by lazy { TypingStatusManager(viewModelScope, context) }
 
     /** Cached city/locality name resolved from the last known location. */
     var lastKnownLocation by mutableStateOf<String?>(null)
@@ -198,6 +205,32 @@ class FamilyViewModel(
         initialValue = emptyList()
     )
 
+    // 📝 Typing status for current thread
+    private val _typingStatusFlow = MutableStateFlow<List<TypingStatus>>(emptyList())
+    val typingStatus = _typingStatusFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Lazily,
+        initialValue = emptyList()
+    )
+
+    // 📝 Typing status by user mobile (for contact list display)
+    private val _typingByUserFlow = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val typingByUser = _typingByUserFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Lazily,
+        initialValue = emptyMap()
+    )
+
+    // 📝 Typing status for all threads, tracked per thread (used in message list view)
+    // Map of threadId -> List of TypingStatus
+    private val _threadTypingStatusMap = mutableMapOf<String, List<TypingStatus>>()
+    private val _allThreadsTypingFlow = MutableStateFlow<Map<String, TypingStatus>>(emptyMap())
+    val allThreadsTyping = _allThreadsTypingFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyMap()
+    )
+
     // User Management state
     val allowedUsers = UserManagementService.observeAllowedUsers().stateIn(
         scope = viewModelScope,
@@ -254,7 +287,9 @@ class FamilyViewModel(
                             // Start observing chat threads for this user
                             // Use launchIn instead of collect to avoid blocking
                             repository.observeUserChatThreads(result.mobile)
-                                .onEach { threads -> _userChatThreadsFlow.value = threads }
+                                .onEach { threads -> 
+                                    _userChatThreadsFlow.value = threads
+                                }
                                 .launchIn(viewModelScope)
                             
             // Start background listener service with error handling  
@@ -290,6 +325,10 @@ class FamilyViewModel(
                         
                         Log.d("🔥 FamilyViewModel", "💾 Saving login session...")
                         repository.saveLoggedInMobile(result.mobile)
+                        
+                        // 💾 PERSISTENT: Save credentials to SharedPreferences for post-kill recovery
+                        CredentialsManager.saveCredentials(context, result.mobile, result.name)
+                        Log.d("🔥 FamilyViewModel", "✅ Credentials saved to SharedPreferences")
                         
                         Log.d("🔥 FamilyViewModel", "🔥 Setting user online in Firebase...")
                         repository.setUserOnline(result.mobile, result.name)
@@ -367,6 +406,10 @@ class FamilyViewModel(
         currentUser?.let {
             repository.setUserOffline(it.mobile, it.name)
         }
+        // 💾 PERSISTENT: Clear saved credentials
+        CredentialsManager.clearCredentials(context)
+        Log.d("🔥 FamilyViewModel", "🗑️ Credentials cleared on logout")
+        
         // Stop background listener service
         CallListenerService.stop(context)
         viewModelScope.launch {
@@ -376,9 +419,11 @@ class FamilyViewModel(
         selectedChatThread = null
         _userChatThreadsFlow.value = emptyList()
         _currentThreadMessagesFlow.value = emptyList()
+        _typingStatusFlow.value = emptyList()
+        _threadTypingStatusMap.clear()
+        _allThreadsTypingFlow.value = emptyMap()
         previousMessageIds = emptySet()
     }
-    
     fun setUserOfflineOnExit() {
         currentUser?.let {
             repository.setUserOffline(it.mobile, it.name)
@@ -388,6 +433,9 @@ class FamilyViewModel(
     // Chat feature methods
     fun selectChatThread(thread: ChatThread) {
         selectedChatThread = thread
+        // Clear typing status when opening a new thread
+        _typingStatusFlow.value = emptyList()
+        
         currentUser?.let {
             repository.markMessagesAsRead(thread.threadId, it.mobile)
         }
@@ -412,6 +460,22 @@ class FamilyViewModel(
                 
                 previousMessageIds = newMessageIds
                 _currentThreadMessagesFlow.value = messages
+            }
+        }
+        
+        // 📝 Start observing typing status for this thread
+        currentUser?.let { user ->
+            viewModelScope.launch {
+                repository.observeTypingStatus(thread.threadId, user.mobile).collect { typingUsers ->
+                    _typingStatusFlow.value = typingUsers
+                    
+                    // 📝 Update typingByUser map for contact list display
+                    val typingMap = mutableMapOf<String, Boolean>()
+                    typingUsers.forEach { typing ->
+                        typingMap[typing.userMobile] = typing.isTyping
+                    }
+                    _typingByUserFlow.value = typingMap
+                }
             }
         }
     }
@@ -464,6 +528,9 @@ class FamilyViewModel(
         val recipientMobile = if (thread.participant1Mobile == current.mobile)
             thread.participant2Mobile else thread.participant1Mobile
 
+        // Stop typing when message is sent
+        typingStatusManager.stopTyping(thread.threadId, current.mobile)
+
         repository.sendChatMessage(
             threadId = thread.threadId,
             senderMobile = current.mobile,
@@ -482,7 +549,36 @@ class FamilyViewModel(
         }
     }
 
+    // 📝 Notify other users that current user is typing
+    fun onTextChanged() {
+        val current = currentUser
+        val thread = selectedChatThread
+        
+        if (current == null) {
+            val msg = "❌ No user"
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (thread == null) {
+            return
+        }
+        
+        typingStatusManager.onTextChanged(thread.threadId, current.mobile, current.name)
+    }
+
+    // 📝 Stop typing notification
+    fun stopTyping() {
+        val current = currentUser ?: return
+        val thread = selectedChatThread ?: return
+        typingStatusManager.stopTyping(thread.threadId, current.mobile)
+    }
+
     fun clearSelectedThread() {
+        val current = currentUser
+        val thread = selectedChatThread
+        if (current != null && thread != null) {
+            typingStatusManager.clearAll(thread.threadId, current.mobile)  // ✅ Use correct mobile
+        }
         selectedChatThread = null
     }
 
@@ -500,10 +596,11 @@ class FamilyViewModel(
 
     fun getUnreadCountForUser(userMobile: String): Int {
         val current = currentUser ?: return 0
-        return userChatThreads.value.find { thread ->
+        val count = userChatThreads.value.find { thread ->
             (thread.participant1Mobile == current.mobile && thread.participant2Mobile == userMobile) ||
             (thread.participant2Mobile == current.mobile && thread.participant1Mobile == userMobile)
         }?.unreadCount ?: 0
+        return count
     }
 
     fun getLastMessageForUser(userMobile: String): String {
@@ -515,25 +612,24 @@ class FamilyViewModel(
     }
 
     fun isUserTyping(userMobile: String): Boolean {
-        // This will be set when we receive typing indicator from Firebase
-        // For now, return false as placeholder - will be updated with real data
-        return false
+        // Show typing only in selected thread
+        return _typingStatusFlow.value.any { it.userMobile == userMobile }
     }
 
-    fun addEvent(title: String, dateTime: String, colorTag: String, recurring: Boolean, reminderMinutes: Int) {
+    // DISABLED - keep typing simple (only in selected thread)
+    private var typingObserverJob: Job? = null
+    
+    private fun startCombinedTypingObserver(threads: List<ChatThread>, currentUserMobile: String) {
+        // Not used - typing only shows in selected thread for simplicity
+    }
+
+    private fun observeTypingForAllThreads(threads: List<ChatThread>, currentUserMobile: String) {
+        // DEPRECATED - use startCombinedTypingObserver instead
+    }
+
+    fun addEvent(event: FamilyEvent) {
         viewModelScope.launch {
-            val id = (events.value.maxOfOrNull { it.id } ?: 0) + 1
-            repository.addEvent(
-                FamilyEvent(
-                    id = id,
-                    title = title,
-                    dateTime = dateTime,
-                    colorTag = colorTag,
-                    recurring = recurring,
-                    reminderMinutes = reminderMinutes,
-                    createdAtEpochMillis = System.currentTimeMillis()
-                )
-            )
+            repository.addEvent(event)
         }
     }
 
@@ -865,6 +961,21 @@ class FamilyViewModel(
                         }
                     }
                 }
+                
+                // 🔥 ALSO SEND SIMPLIFIED CALL via Firebase Realtime DB
+                // This enables phone-to-phone calling even without the complex repo infrastructure
+                Log.d("FamilyViewModel", "🔥 Also initiating simplified call to $toUserId")
+                try {
+                    com.familyconnect.app.data.repository.CallService.initiateCall(
+                        receiverUserId = toUserId,
+                        callerId = user.mobile,
+                        callerName = user.name,
+                        callType = if (callState.callType == CallType.VIDEO) "video" else "audio"
+                    )
+                    Log.d("FamilyViewModel", "✅ Simplified call initiated")
+                } catch (e: Exception) {
+                    Log.w("FamilyViewModel", "Could not initiate simplified call: ${e.message}")
+                }
             }
         } ?: run {
             Log.e("FamilyViewModel", "❌ Cannot initiate call: currentUser is null")
@@ -989,6 +1100,21 @@ class FamilyViewModel(
         )
         Log.d(TAG, "✅ Step 2: Local state updated to CONNECTING with callType=$incomingCallType")
         
+        // 🔥 Step 2.5: Cleanup simplified call path in Firebase
+        // This removes the call data from calls/{currentUserId}
+        viewModelScope.launch {
+            try {
+                val userMobile = currentUser?.mobile
+                if (userMobile != null) {
+                    Log.d(TAG, "🧹 Cleaning up simplified call path for $userMobile")
+                    com.familyconnect.app.data.repository.CallService.acceptCall(userMobile)
+                    Log.d(TAG, "✅ Simplified call cleaned up")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not cleanup simplified call: ${e.message}")
+            }
+        }
+        
         // Step 3: Update Firebase status - CRITICAL PART
         Log.d(TAG, "📡 Step 3: Updating Firebase status to 'accepted'...")
         repository.updateCallStatus(threadId, callId, "accepted") { success ->
@@ -1037,6 +1163,18 @@ class FamilyViewModel(
     fun rejectCall(callId: String, threadId: String) {
         incomingActionInProgress = true
         viewModelScope.launch {
+            // 🔥 Cleanup simplified call path in Firebase
+            try {
+                val userMobile = currentUser?.mobile
+                if (userMobile != null) {
+                    Log.d("FamilyViewModel.rejectCall", "🧹 Cleaning up simplified call path for $userMobile")
+                    com.familyconnect.app.data.repository.CallService.rejectCall(userMobile)
+                    Log.d("FamilyViewModel.rejectCall", "✅ Simplified call cleaned up")
+                }
+            } catch (e: Exception) {
+                Log.w("FamilyViewModel.rejectCall", "Could not cleanup simplified call: ${e.message}")
+            }
+            
             repository.updateCallStatus(threadId, callId, "rejected") { success ->
                 incomingActionInProgress = false
                 if (success) {

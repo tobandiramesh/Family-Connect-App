@@ -49,6 +49,9 @@ The chat feature has been implemented with the following capabilities:
     },
     "messages": {
       ".indexOn": ["timestamp", "senderMobile", "read"]
+    },
+    "typing": {
+      ".indexOn": ["timestamp"]
     }
   }
 }

@@ -366,6 +366,10 @@ class FamilyRepository(
 
     fun observeThreadMessages(threadId: String) = FirebaseService.observeThreadMessages(threadId)
 
+    // 📝 Observe typing status for a thread
+    fun observeTypingStatus(threadId: String, currentUserMobile: String) = 
+        FirebaseService.observeTypingStatus(threadId, currentUserMobile)
+
     fun setUserOnline(mobile: String, name: String) {
         FirebaseService.setUserOnline(mobile, name)
     }

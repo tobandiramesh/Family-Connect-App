@@ -10,11 +10,16 @@ data class UserProfile(
 data class FamilyEvent(
     val id: Int,
     val title: String,
-    val dateTime: String,
-    val colorTag: String,
-    val recurring: Boolean,
-    val reminderMinutes: Int,
-    val createdAtEpochMillis: Long
+    val description: String = "",
+    val location: String = "",
+    val dateTime: Long = 0,  // epoch millis
+    val colorTag: String = "Blue",
+    val category: String = "Other",  // Birthday, Anniversary, Grocery, Medicine, Doctor, Other
+    val recurring: Boolean = false,
+    val reminderMinutes: Int = 1440,  // default 1 day before
+    val invitedMembers: List<String> = emptyList(),  // mobile numbers
+    val createdBy: String = "",
+    val createdAtEpochMillis: Long = 0
 )
 
 data class TaskItem(
@@ -61,6 +66,14 @@ data class ChatMessageData(
     val replyToSenderName: String? = null,
     val replyToBody: String? = null,
     val senderLocation: String? = null
+)
+
+// 📝 Typing indicator data model
+data class TypingStatus(
+    val userMobile: String = "",
+    val userName: String = "",
+    val timestamp: Long = 0,
+    val isTyping: Boolean = true
 )
 
 data class OnlineUser(

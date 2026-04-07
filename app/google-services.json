@@ -2,7 +2,8 @@
   "project_info": {
     "project_number": "258093759223",
     "project_id": "family-connect-app-a219b",
-    "storage_bucket": "family-connect-app-a219b.firebasestorage.app"
+    "storage_bucket": "family-connect-app-a219b.firebasestorage.app",
+    "database_url": "https://family-connect-app-a219b-default-rtdb.asia-southeast1.firebasedatabase.app"
   },
   "client": [
     {

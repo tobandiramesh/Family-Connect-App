@@ -3,22 +3,23 @@ package com.familyconnect.app.telecom
 import android.telecom.Connection
 import android.util.Log
 
-class MyConnection : Connection() {
-
-    private val TAG = "MyConnection"
+class MyConnection(
+    private val callId: String?,
+    private val callerName: String
+) : Connection() {
 
     override fun onAnswer() {
-        Log.d(TAG, "✅ onAnswer() called - User answered call")
+        Log.e("CALL_UI", "✅ Call answered: $callerName")
         setActive()
     }
 
     override fun onDisconnect() {
-        Log.d(TAG, "❌ onDisconnect() called - Call ended")
+        Log.e("CALL_UI", "❌ Call ended: $callId")
         destroy()
     }
 
     override fun onReject() {
-        Log.d(TAG, "🚫 onReject() called - User rejected call")
+        Log.e("CALL_UI", "🚫 Call rejected: $callId")
         destroy()
     }
 }
