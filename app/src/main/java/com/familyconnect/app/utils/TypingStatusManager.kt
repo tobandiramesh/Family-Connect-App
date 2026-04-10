@@ -72,7 +72,8 @@ class TypingStatusManager(
             
             val typingRef = database.getReference(path)
             val data = mapOf(
-                "name" to userName,
+                "userMobile" to userMobile,
+                "userName" to userName,
                 "timestamp" to System.currentTimeMillis(),
                 "isTyping" to true
             )
