@@ -1,11 +1,14 @@
 package com.familyconnect.app.notifications
 
 import android.util.Log
+import android.content.Intent
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.google.firebase.messaging.FirebaseMessaging
 import android.content.Context
+import android.content.ComponentName
+import android.os.Bundle
 
 /**
  * Handles Firebase Cloud Messaging push notifications.
@@ -32,9 +35,36 @@ class FCMService : FirebaseMessagingService() {
                     Log.d(TAG, msg)
                     saveFCMTokenToFirebaseImpl(context, token, mobile)
                 }
+                
+                // 🔥 SUBSCRIBE TO TOPICS - WITH ERROR HANDLING
+                subscribeToTopicsWithRetry()
             } catch (e: Exception) {
                 val msg = "❌ Error getting FCM token: ${e.message}"
-                Log.e(TAG, msg)
+                Log.e(TAG, msg, e)
+            }
+        }
+        
+        private fun subscribeToTopicsWithRetry() {
+            try {
+                FirebaseMessaging.getInstance().subscribeToTopic("incoming_calls")
+                    .addOnSuccessListener {
+                        Log.d(TAG, "✅ [SUCCESS] Subscribed to topic: incoming_calls")
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e(TAG, "❌ [FAILED] Subscribe to incoming_calls: ${e.message}", e)
+                    }
+                
+                FirebaseMessaging.getInstance().subscribeToTopic("messages")
+                    .addOnSuccessListener {
+                        Log.d(TAG, "✅ [SUCCESS] Subscribed to topic: messages")
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e(TAG, "❌ [FAILED] Subscribe to messages: ${e.message}", e)
+                    }
+                
+                Log.d(TAG, "📢 Topic subscription requests sent to FCM")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Exception during topic subscription: ${e.message}", e)
             }
         }
         
@@ -102,67 +132,69 @@ class FCMService : FirebaseMessagingService() {
         }
     }
 
-    override fun onMessageReceived(message: RemoteMessage) {
-        super.onMessageReceived(message)
-        val msg = "📨 FCM message received"
-        Log.d(TAG, msg)
+    override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        val data = remoteMessage.data
 
-        val data = message.data
-        val type = data["type"] ?: ""
+        Log.e("FCM_DEBUG", "🔥 FCM RECEIVED: $data")
 
-        Log.d(TAG, "🔍 FCM Data payload: $data")
-        Log.d(TAG, "📦 Message type: $type")
+        if (data["type"] == "incoming_call") {
+            val callId = data["callId"] ?: return
+            val threadId = data["threadId"] ?: return
+            val callerName = data["callerName"] ?: "Unknown"
+            val callType = data["callType"] ?: "audio"
 
-        when (type) {
-            "incoming_call" -> {
-                val callId = data["callId"] ?: return
-                val threadId = data["threadId"] ?: return
-                val callerName = data["callerName"] ?: "Someone"
-                val callType = data["callType"] ?: "audio"
-
-                Log.d(TAG, "\n🎯 INCOMING CALL VIA FCM (PRIMARY ENTRY POINT)")
-                Log.d(TAG, "   callId: $callId")
-                Log.d(TAG, "   threadId: $threadId")
-                Log.d(TAG, "   caller: $callerName")
-                Log.d(TAG, "   callType: $callType ⭐")
-                
-                // 🔥 CRITICAL: FCMService MUST post notification directly
-                // This is the primary path when app is closed/killed
-                Log.d(TAG, "🔥 FCMService posting notification (app may be closed)")
-                NotificationHelper.postIncomingCallNotification(
-                    context = this,
-                    callId = callId,
-                    threadId = threadId,
-                    callerName = callerName,
-                    callType = callType
-                )
-                Log.d(TAG, "✅ FCMService notification posted successfully")
-            }
-
-            "new_message" -> {
-                val senderName = data["senderName"] ?: "Someone"
-                val messageBody = data["messageBody"] ?: "New message"
-                val threadId = data["threadId"] ?: ""
-
-                NotificationHelper.postMessageNotification(
-                    context = this,
-                    id = threadId.hashCode(),
-                    senderName = senderName,
-                    messageBody = messageBody
-                )
-            }
-
-            else -> {
-                // Handle notification payload (when app is in foreground)
-                message.notification?.let { notification ->
-                    NotificationHelper.post(
-                        context = this,
-                        id = message.messageId.hashCode(),
-                        title = notification.title ?: "Family Connect",
-                        body = notification.body ?: ""
-                    )
+            Log.d(TAG, "📞 Incoming call from FCM: $callId from $callerName")
+            
+            // 🔥 Use Telecom Framework for system-level call handling
+            try {
+                val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
+                if (telecomManager == null) {
+                    Log.e(TAG, "   ❌ TelecomManager not available, falling back to CallForegroundService")
+                    fallbackToCallForegroundService(callId, threadId, callerName, callType)
+                    return
                 }
+
+                val handle = android.telecom.PhoneAccountHandle(
+                    ComponentName(this, com.familyconnect.app.telecom.MyConnectionService::class.java),
+                    "FamilyConnectCall"
+                )
+
+                val extras = Bundle().apply {
+                    putString("callId", callId)
+                    putString("threadId", threadId)
+                    putString("callerName", callerName)
+                    putString("callType", callType)
+                }
+
+                Log.d(TAG, "   🚀 Triggering incoming call via TelecomManager...")
+                telecomManager.addNewIncomingCall(handle, extras)
+                Log.d(TAG, "   ✅ Telecom incoming call triggered")
+            } catch (e: Exception) {
+                Log.e(TAG, "   ❌ Error triggering telecom call: ${e.message}", e)
+                fallbackToCallForegroundService(callId, threadId, callerName, callType)
             }
+        }
+    }
+
+    private fun fallbackToCallForegroundService(
+        callId: String,
+        threadId: String,
+        callerName: String,
+        callType: String
+    ) {
+        Log.d(TAG, "   🔄 Falling back to CallForegroundService...")
+        val serviceIntent = Intent(this, CallForegroundService::class.java).apply {
+            putExtra(NotificationHelper.EXTRA_CALL_ID, callId)
+            putExtra(NotificationHelper.EXTRA_THREAD_ID, threadId)
+            putExtra(NotificationHelper.EXTRA_CALLER_NAME, callerName)
+            putExtra(NotificationHelper.EXTRA_CALL_TYPE, callType)
+        }
+        
+        try {
+            androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
+            Log.d(TAG, "   ✅ CallForegroundService started")
+        } catch (e: Exception) {
+            Log.e(TAG, "   ❌ Error starting foreground service: ${e.message}", e)
         }
     }
 }

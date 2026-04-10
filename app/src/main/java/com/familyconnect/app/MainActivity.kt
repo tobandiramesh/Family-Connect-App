@@ -11,6 +11,16 @@ import androidx.activity.compose.setContent
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.familyconnect.app.notifications.NotificationHelper
 import com.familyconnect.app.ui.FamilyConnectRoot
@@ -19,6 +29,8 @@ import com.familyconnect.app.ui.FamilyViewModelFactory
 import com.familyconnect.app.ui.theme.FamilyConnectTheme
 import android.util.Log
 import com.familyconnect.app.notifications.CallListenerService
+import android.content.ComponentName
+import android.content.Context
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 
@@ -31,6 +43,9 @@ class MainActivity : ComponentActivity() {
         
         // Auto-start CallListenerService if user is already logged in
         ensureCallListenerServiceRunning()
+        
+        // 🔥 Register PhoneAccount for Telecom Framework (system call handling)
+        registerPhoneAccount()
         
         // Extract and store call data BEFORE rendering UI
         extractAndStorePendingCall(intent)
@@ -234,6 +249,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun registerPhoneAccount() {
+        try {
+            Log.d("MainActivity", "🔥 Registering PhoneAccount for Telecom Framework...")
+            
+            val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
+            if (telecomManager == null) {
+                Log.e("MainActivity", "   ❌ TelecomManager not available")
+                return
+            }
+
+            val handle = android.telecom.PhoneAccountHandle(
+                ComponentName(this, com.familyconnect.app.telecom.MyConnectionService::class.java),
+                "FamilyConnectCall"
+            )
+
+            val phoneAccount = android.telecom.PhoneAccount.builder(handle, "Family Connect Calls")
+                .setCapabilities(android.telecom.PhoneAccount.CAPABILITY_CALL_PROVIDER)
+                .build()
+
+            telecomManager.registerPhoneAccount(phoneAccount)
+            Log.d("MainActivity", "   ✅ PhoneAccount registered successfully!")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "   ❌ Error registering PhoneAccount: ${e.message}", e)
+        }
+    }
+
     private fun maybeRequestFullScreenIntentPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {  // Android 12+
             val permission = Manifest.permission.USE_FULL_SCREEN_INTENT
@@ -251,5 +292,25 @@ class MainActivity : ComponentActivity() {
 private fun Root(app: FamilyConnectApp, onViewModelReady: (FamilyViewModel) -> Unit = {}) {
     val viewModel: FamilyViewModel = viewModel(factory = FamilyViewModelFactory(app.repository, app))
     onViewModelReady(viewModel)
-    FamilyConnectRoot(viewModel = viewModel)
+    
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // 🔥 TEMPORARY TEST BUTTON - Remove after debugging
+        Button(
+            onClick = {
+                Log.d("MainActivity", "🧪 TEST BUTTON: Testing notification...")
+                NotificationHelper.postIncomingCallNotification(
+                    app,
+                    "test_call_123",
+                    "test_thread_456",
+                    "Test User",
+                    "audio"
+                )
+            },
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text("🔥 TEST NOTIFICATION")
+        }
+        
+        FamilyConnectRoot(viewModel = viewModel)
+    }
 }

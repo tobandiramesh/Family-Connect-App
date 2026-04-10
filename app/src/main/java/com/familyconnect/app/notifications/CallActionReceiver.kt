@@ -3,6 +3,7 @@ package com.familyconnect.app.notifications
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.familyconnect.app.MainActivity
 import com.familyconnect.app.data.repository.FirebaseService
 
@@ -13,12 +14,13 @@ class CallActionReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             NotificationHelper.ACTION_ACCEPT_CALL -> {
+                Log.d("CallActionReceiver", "✅ ACCEPT button tapped for call=$callId")
                 val callerName = intent.getStringExtra(NotificationHelper.EXTRA_CALLER_NAME) ?: ""
                 
                 NotificationHelper.cancelCallNotification(context, callId)
                 
                 FirebaseService.updateCallStatus(threadId, callId, "accepted") { success ->
-                    // Handle result
+                    Log.d("CallActionReceiver", "Firebase updated: success=$success")
                 }
 
                 // Launch the app
@@ -32,16 +34,18 @@ class CallActionReceiver : BroadcastReceiver() {
                 
                 try {
                     context.startActivity(launchIntent)
+                    Log.d("CallActionReceiver", "✅ MainActivity launched")
                 } catch (e: Exception) {
-                    // Silent failure
+                    Log.e("CallActionReceiver", "❌ Error launching activity: ${e.message}")
                 }
             }
 
             NotificationHelper.ACTION_REJECT_CALL -> {
+                Log.d("CallActionReceiver", "❌ REJECT button tapped for call=$callId")
                 NotificationHelper.cancelCallNotification(context, callId)
 
                 FirebaseService.updateCallStatus(threadId, callId, "rejected") { success ->
-                    // Handle result
+                    Log.d("CallActionReceiver", "Firebase updated: success=$success")
                 }
             }
         }

@@ -55,71 +55,102 @@ class IncomingCallActivity : ComponentActivity() {
         
         val TAG = "IncomingCallActivity"
         
-        // Extract call data
-        val callId = intent.getStringExtra(NotificationHelper.EXTRA_CALL_ID)
-        val threadId = intent.getStringExtra(NotificationHelper.EXTRA_THREAD_ID)
-        val callerName = intent.getStringExtra(NotificationHelper.EXTRA_CALLER_NAME)
-        val callType = intent.getStringExtra(NotificationHelper.EXTRA_CALL_TYPE) ?: "audio"
+        Log.d(TAG, "🚀 onCreate() called")
+        Log.d(TAG, "   Intent: ${intent?.action}")
+        Log.d(TAG, "   Extras: ${intent?.extras?.keySet()}")
         
-        // Ensure window is visible - use proper API level checks
+        // Extract call data
+        val callId = intent?.getStringExtra(NotificationHelper.EXTRA_CALL_ID)
+        val threadId = intent?.getStringExtra(NotificationHelper.EXTRA_THREAD_ID)
+        val callerName = intent?.getStringExtra(NotificationHelper.EXTRA_CALLER_NAME)
+        val callType = intent?.getStringExtra(NotificationHelper.EXTRA_CALL_TYPE) ?: "audio"
+        
+        Log.d(TAG, "   📞 Call Data:")
+        Log.d(TAG, "      callId: $callId")
+        Log.d(TAG, "      threadId: $threadId")
+        Log.d(TAG, "      callerName: $callerName")
+        Log.d(TAG, "      callType: $callType")
+        
+        // Set window flags FIRST
         try {
-            // Old API (deprecated but still needed for older devices)
             window.addFlags(
                 android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                 android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
                 android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
             )
+            Log.d(TAG, "   ✅ Window flags set (legacy)")
             
-            // New API (Android 8.1+)
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
                 setShowWhenLocked(true)
                 setTurnScreenOn(true)
+                Log.d(TAG, "   ✅ Window flags set (modern API)")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error setting window flags: ${e.message}")
+            Log.e(TAG, "❌ Error setting window flags: ${e.message}")
         }
         
-        // Cancel notification immediately
-        try {
-            NotificationHelper.cancelCallNotification(this, callId ?: "")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error cancelling notification: ${e.message}")
+        // Cancel notification
+        if (!callId.isNullOrBlank()) {
+            try {
+                NotificationHelper.cancelCallNotification(this, callId)
+                Log.d(TAG, "   ✅ Notification cancelled")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error cancelling notification: ${e.message}")
+            }
         }
         
-        // ✅ Create ViewModel BEFORE setContent to set state early
+        // Now render UI with call state set BEFORE composition
         if (!callId.isNullOrBlank() && !threadId.isNullOrBlank()) {
-            val app = application as FamilyConnectApp
-            val viewModel = ViewModelProvider(
-                this,
-                FamilyViewModelFactory(app.repository, this)
-            )[FamilyViewModel::class.java]
+            Log.d(TAG, "✅ Valid call data, rendering UI...")
             
-            // ✅ Set call state to RINGING BEFORE rendering UI
-            viewModel.setIncomingCallRinging(callId, threadId, callerName ?: "Unknown", callType)
-            
-            // ✅ Also set pending call
-            app.setPendingCall(PendingCallIntent(callId, threadId, callerName ?: "Unknown", callType))
-            
-            // Now render - state is already RINGING
-            setContent {
-                FamilyConnectTheme {
-                    FamilyConnectRoot(viewModel)
+            try {
+                val app = application as FamilyConnectApp
+                val viewModel = ViewModelProvider(
+                    this,
+                    FamilyViewModelFactory(app.repository, this)
+                )[FamilyViewModel::class.java]
+                
+                Log.d(TAG, "   🔧 Setting call state to RINGING...")
+                viewModel.setIncomingCallRinging(callId, threadId, callerName ?: "Unknown", callType)
+                Log.d(TAG, "   ✅ Call state set to RINGING")
+                
+                Log.d(TAG, "   📄 Setting pending call...")
+                app.setPendingCall(PendingCallIntent(callId, threadId, callerName ?: "Unknown", callType))
+                Log.d(TAG, "   ✅ Pending call set")
+                
+                Log.d(TAG, "   🎨 Rendering FamilyConnectRoot with call UI...")
+                setContent {
+                    FamilyConnectTheme {
+                        FamilyConnectRoot(viewModel)
+                    }
                 }
+                Log.d(TAG, "✅ UI rendered successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error in onCreate: ${e.message}", e)
+                // Show error UI as fallback
+                showErrorUI("Error: ${e.message?.take(50)}")
             }
         } else {
-            // Fallback: Show error
-            Log.e(TAG, "   ❌ Missing call data - showing error")
-            
-            setContent {
-                FamilyConnectTheme {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("❌ Missing call information", color = Color.White)
-                    }
+            Log.e(TAG, "❌ Missing critical call data!")
+            Log.e(TAG, "   callId=$callId, threadId=$threadId")
+            showErrorUI("Invalid call data")
+        }
+    }
+    
+    private fun showErrorUI(errorMessage: String) {
+        setContent {
+            FamilyConnectTheme {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        errorMessage,
+                        color = Color.Red,
+                        style = MaterialTheme.typography.headlineSmall
+                    )
                 }
             }
         }
