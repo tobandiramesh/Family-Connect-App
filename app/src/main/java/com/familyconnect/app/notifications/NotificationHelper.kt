@@ -148,6 +148,8 @@ object NotificationHelper {
 
     fun postReminderNotification(context: Context, id: Int, title: String, body: String) {
         // ✅ Reminder notification with sound & vibration
+        Log.d("NotificationHelper", "📢 postReminderNotification: id=$id, title=$title, body=$body")
+        
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -157,19 +159,28 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+        val builder = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
-            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
             .setVibrate(longArrayOf(0, 500, 250, 500))
-            .build()
-
-        runCatching {
+        
+        // For Android < 8, also set sound in notification (channel doesn't exist)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            builder.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+        }
+        
+        val notification = builder.build()
+        
+        try {
+            Log.d("NotificationHelper", "✅ Posting notification ID $id")
             NotificationManagerCompat.from(context).notify(id, notification)
+            Log.d("NotificationHelper", "✅ Notification posted successfully")
+        } catch (e: Exception) {
+            Log.e("NotificationHelper", "❌ Error posting notification: ${e.message}", e)
         }
     }
 

@@ -716,7 +716,7 @@ class FamilyRepository(
                             Log.d("FamilyRepository", "✅ Reminder snoozed for $snoozeMinutes min: $reminderId")
                             
                             // 🔥 CRITICAL: Schedule alarm to re-trigger notification after snooze expires
-                            scheduleReminderAlarm(context, reminderId, reminder.title, snoozedUntil)
+                            scheduleReminderAlarm(context, reminderId, reminder.title, snoozedUntil, snoozeMinutes)
                             
                             loadRemindersFromFirebase()
                         }
@@ -735,7 +735,8 @@ class FamilyRepository(
         context: android.content.Context,
         reminderId: String,
         reminderTitle: String,
-        triggerAtMillis: Long
+        triggerAtMillis: Long,
+        snoozeMinutesDuration: Int = 5  // Track snooze duration for rescheduling
     ) {
         try {
             val alarmManager = context.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
@@ -744,6 +745,7 @@ class FamilyRepository(
                 action = com.familyconnect.app.notifications.ReminderAlarmReceiver.ACTION_SNOOZE_EXPIRED
                 putExtra(com.familyconnect.app.notifications.ReminderAlarmReceiver.EXTRA_REMINDER_ID, reminderId)
                 putExtra(com.familyconnect.app.notifications.ReminderAlarmReceiver.EXTRA_REMINDER_TITLE, reminderTitle)
+                putExtra(com.familyconnect.app.notifications.ReminderAlarmReceiver.EXTRA_SNOOZE_MINUTES, snoozeMinutesDuration)  // Pass snooze duration
             }
             
             val pendingIntent = android.app.PendingIntent.getBroadcast(
