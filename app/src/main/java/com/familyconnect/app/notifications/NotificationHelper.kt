@@ -19,6 +19,7 @@ object NotificationHelper {
     const val CHANNEL_CALLS = "family_connect_calls"
     const val CHANNEL_MESSAGES = "family_connect_messages"
     const val CHANNEL_SERVICE = "family_connect_service"
+    const val CHANNEL_REMINDERS = "family_connect_reminders"
 
     const val CALL_NOTIFICATION_ID = 9001
     const val ACTION_ACCEPT_CALL = "com.familyconnect.app.ACTION_ACCEPT_CALL"
@@ -84,6 +85,25 @@ object NotificationHelper {
                 setShowBadge(false)
             }
             manager.createNotificationChannel(serviceChannel)
+
+            // Reminder and snooze channel (HIGH priority with sound & vibration)
+            val reminderChannel = NotificationChannel(
+                CHANNEL_REMINDERS,
+                "Reminders & Snoozes",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Reminder and snooze expiration notifications"
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 500, 250, 500)
+            }
+            manager.createNotificationChannel(reminderChannel)
         }
     }
 
@@ -119,6 +139,33 @@ object NotificationHelper {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
+            .build()
+
+        runCatching {
+            NotificationManagerCompat.from(context).notify(id, notification)
+        }
+    }
+
+    fun postReminderNotification(context: Context, id: Int, title: String, body: String) {
+        // ✅ Reminder notification with sound & vibration
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        
+        val pendingIntent = PendingIntent.getActivity(
+            context, id, launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_REMINDERS)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+            .setVibrate(longArrayOf(0, 500, 250, 500))
             .build()
 
         runCatching {

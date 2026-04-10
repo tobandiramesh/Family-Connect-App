@@ -37,12 +37,12 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
         
         Log.d(TAG, "🔔 Snooze expired for reminder: $reminderId ($reminderTitle)")
         
-        // Post notification that snooze expired
-        NotificationHelper.post(
+        // 🔊 Post notification that snooze expired (WITH SOUND & VIBRATION)
+        NotificationHelper.postReminderNotification(
             context,
             reminderId.hashCode() + 3000,
-            "Snoozed Reminder",
-            "🔔 $reminderTitle - snooze ended"
+            "🔔 Snoozed Reminder",
+            "$reminderTitle - snooze ended!"
         )
         
         // Optionally: Verify reminder still exists in Firebase and is not completed
