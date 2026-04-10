@@ -30,7 +30,6 @@ class FamilyConnectApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        FirebaseService.setAppContext(this)
         NotificationHelper.ensureChannel(this)
         val database = AppDatabase.getInstance(this)
         repository = FamilyRepository(this, database.userDao())

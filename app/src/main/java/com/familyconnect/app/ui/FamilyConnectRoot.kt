@@ -9,6 +9,7 @@ import android.net.Uri
 import android.content.pm.PackageManager
 import android.provider.MediaStore
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -50,6 +51,7 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.AttachFile
@@ -60,9 +62,11 @@ import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Note
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoCall
@@ -73,6 +77,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -104,6 +110,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.content.ContextCompat
@@ -118,6 +126,7 @@ import com.familyconnect.app.webrtc.CallStatus
 private enum class HomeTab {
     CHAT,
     EVENTS,
+    REMINDERS,
     SETTINGS
 }
 
@@ -412,9 +421,11 @@ private fun AuthScreen(viewModel: FamilyViewModel) {
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun HomeScreen(viewModel: FamilyViewModel) {
+    val context = LocalContext.current
+    val currentUserValue = viewModel.currentUser
+    
     val user = viewModel.currentUser ?: return
     val callState = viewModel.callState
-    val context = LocalContext.current
     val pendingMicAction = remember { mutableStateOf<(() -> Unit)?>(null) }
     val pendingCallAction = remember { mutableStateOf<(() -> Unit)?>(null) }
     val micPermissionLauncher = rememberLauncherForActivityResult(
@@ -566,6 +577,12 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
                             label = { Text("🎉 Events", style = MaterialTheme.typography.labelSmall) }
                         )
                         NavigationBarItem(
+                            selected = selectedTab == HomeTab.REMINDERS,
+                            onClick = { selectedTab = HomeTab.REMINDERS },
+                            icon = { Icon(Icons.Default.Notifications, contentDescription = "Reminders", modifier = Modifier.size(24.dp)) },
+                            label = { Text("📌 Reminders", style = MaterialTheme.typography.labelSmall) }
+                        )
+                        NavigationBarItem(
                             selected = selectedTab == HomeTab.SETTINGS,
                             onClick = { selectedTab = HomeTab.SETTINGS },
                             icon = { Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(24.dp)) },
@@ -592,6 +609,7 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
                             }
                         )
                         HomeTab.EVENTS -> EventsScreen(viewModel)
+                        HomeTab.REMINDERS -> RemindersScreen(viewModel)
                         HomeTab.SETTINGS -> SettingsScreen(viewModel, user.role)
                     }
                 }
@@ -632,7 +650,27 @@ private fun DashboardScreen(
     onOpenNotes: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    val events by viewModel.events.collectAsState(initial = emptyList())
+    val allEvents by viewModel.events.collectAsState(initial = emptyList())
+    val allowedUsers by viewModel.allowedUsers.collectAsState(initial = emptyList())
+    val currentUserMobile = viewModel.currentUser?.mobile
+    val context = LocalContext.current
+    
+    // Filter events: show demo events + user's own events + events they're invited to
+    val events = if (currentUserMobile.isNullOrBlank()) {
+        // If no user logged in, show only demo events (empty createdBy)
+        allEvents.filter { event -> event.createdBy.isEmpty() }
+    } else {
+        val trimmedUserMobile = currentUserMobile.trim()
+        allEvents.filter { event ->
+            val isDemo = event.createdBy.isEmpty()
+            val isCreator = event.createdBy.trim() == trimmedUserMobile
+            val invitedTrimmed = event.invitedMembers.map { it.trim() }
+            val isInvited = trimmedUserMobile in invitedTrimmed
+            val shouldShow = isDemo || isCreator || isInvited
+            shouldShow
+        }
+    }
+    
     val messages by viewModel.messages.collectAsState(initial = emptyList())
     val tasks by viewModel.tasks.collectAsState(initial = emptyList())
     val notes by viewModel.notes.collectAsState(initial = emptyList())
@@ -685,7 +723,8 @@ private fun DashboardScreen(
                         Text("Active events", fontWeight = FontWeight.Bold)
                     }
                     events.take(3).forEach { event ->
-                        Text("${event.title} | ${event.dateTime} | expires in ${viewModel.eventDaysLeft(event)} day(s)")
+                        val creatorName = allowedUsers.find { it.mobile.trim() == event.createdBy.trim() }?.name ?: event.createdBy
+                        Text("${event.title}\n👤 by $creatorName | expires in ${viewModel.eventDaysLeft(event)} day(s)")
                     }
                 }
             }
@@ -790,7 +829,20 @@ private fun DashboardTile(
 
 @Composable
 private fun CalendarScreen(viewModel: FamilyViewModel, canEdit: Boolean) {
-    val events by viewModel.events.collectAsState(initial = emptyList())
+    val allEvents by viewModel.events.collectAsState(initial = emptyList())
+    val currentUserMobile = viewModel.currentUser?.mobile
+    
+    // Filter events: show demo events + user's own events + events they're invited to
+    val events = if (currentUserMobile.isNullOrBlank()) {
+        // If no user logged in, show only demo events (empty createdBy)
+        allEvents.filter { event -> event.createdBy.isEmpty() }
+    } else {
+        allEvents.filter { event ->
+            event.createdBy.isEmpty() ||  // Show demo events to everyone
+            event.createdBy == currentUserMobile ||  // Show events created by this user
+            currentUserMobile in event.invitedMembers  // Show events where user is invited
+        }
+    }
     var title by remember { mutableStateOf("") }
     var dateTime by remember { mutableStateOf("") }
     var colorTag by remember { mutableStateOf("Blue") }
@@ -871,7 +923,7 @@ private fun ChatScreen(
     val selectedThread = viewModel.selectedChatThread
     val threadMessages by viewModel.currentThreadMessages.collectAsState(initial = emptyList())
     val typingUsers by viewModel.typingStatus.collectAsState(initial = emptyList())
-    val typingByUser by viewModel.typingByUser.collectAsState(initial = emptyMap())
+    val typingByThread by viewModel.typingByThread.collectAsState(initial = emptyMap())
     var messageBody by remember { mutableStateOf("") }
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showAttachActions by remember { mutableStateOf(false) }
@@ -940,6 +992,21 @@ private fun ChatScreen(
 
     if (selectedThread == null) {
         // Show list of online users with beautiful design
+        val allEvents by viewModel.events.collectAsState(initial = emptyList())
+        val currentUserMobile = viewModel.currentUser?.mobile
+        
+        // Filter events: show demo events + user's own events + events they're invited to
+        val events = if (currentUserMobile.isNullOrBlank()) {
+            // If no user logged in, show only demo events (empty createdBy)
+            allEvents.filter { event -> event.createdBy.isEmpty() }
+        } else {
+            allEvents.filter { event ->
+                event.createdBy.isEmpty() ||  // Show demo events to everyone
+                event.createdBy == currentUserMobile ||  // Show events created by this user
+                currentUserMobile in event.invitedMembers  // Show events where user is invited
+            }
+        }
+        
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -947,6 +1014,65 @@ private fun ChatScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(16.dp)
         ) {
+            // Show upcoming events if any exist
+            if (events.isNotEmpty()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                        Text(
+                            "🎉 Upcoming Events",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                
+                items(minOf(3, events.size)) { index ->
+                    val event = events[index]
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = Color(0xFFF5E6FF)
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(event.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .background(
+                                            Color(when(event.colorTag) {
+                                                "Blue" -> 0xFF5E92F3
+                                                "Green" -> 0xFF4CAF50
+                                                "Red" -> 0xFFE53935
+                                                else -> 0xFF9C27B0
+                                            }),
+                                            shape = RoundedCornerShape(50.dp)
+                                        )
+                                )
+                            }
+                            Text(event.category, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                            if (event.reminderMinutes > 0) {
+                                Text(
+                                    "Reminder: ${event.reminderMinutes / 60} hours before",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFF666666)
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                item { Spacer(modifier = Modifier.height(8.dp)) }
+            }
+            
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
                     Text(
@@ -1081,8 +1207,14 @@ private fun ChatScreen(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     modifier = Modifier.padding(top = 2.dp)
                                 ) {
-                                    // 📝 Check if user is typing
-                                    val isUserTyping = typingByUser[user.mobile] ?: false
+                                    // 📝 Check if user is typing (FIXED)
+                                    val thread = userChatThreads.find {
+                                        (it.participant1Mobile == viewModel.currentUser?.mobile && it.participant2Mobile == user.mobile) ||
+                                        (it.participant2Mobile == viewModel.currentUser?.mobile && it.participant1Mobile == user.mobile)
+                                    }
+                                    
+                                    val typingStatus = thread?.let { typingByThread[it.threadId] }
+                                    val isUserTyping = typingStatus != null && typingStatus.isTyping
                                     
                                     Box(
                                         modifier = Modifier
@@ -1096,10 +1228,10 @@ private fun ChatScreen(
                                                 shape = RoundedCornerShape(50.dp)
                                             )
                                     )
-                                    // Show "Typing...", "Active now" or "Last seen"
+                                    // Show "User is typing...", "Active now" or "Last seen"
                                     Text(
                                         when {
-                                            isUserTyping -> "Typing..."
+                                            isUserTyping -> "${typingStatus?.userName} is typing..."
                                             user.isOnline -> "Active now"
                                             else -> viewModel.formatLastSeen(user.lastSeen).ifBlank { "Offline" }
                                         },
@@ -2442,8 +2574,419 @@ private fun NotesScreen(viewModel: FamilyViewModel) {
 
 
 @Composable
+private fun RemindersScreen(viewModel: FamilyViewModel) {
+    val reminders by viewModel.reminders.collectAsState(initial = emptyList())
+    val allowedUsers by viewModel.allowedUsers.collectAsState(initial = emptyList())
+    val context = LocalContext.current
+    
+    var showCreateReminder by remember { mutableStateOf(false) }
+    var reminderTitle by remember { mutableStateOf("") }
+    var reminderDetails by remember { mutableStateOf("") }
+    var assignedTo by remember { mutableStateOf(mutableListOf<String>()) }
+
+    if (showCreateReminder) {
+        Dialog(
+            onDismissRequest = { showCreateReminder = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .background(MaterialTheme.colorScheme.background),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text("📌 Create New Reminder", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    
+                    OutlinedTextField(
+                        value = reminderTitle,
+                        onValueChange = { reminderTitle = it },
+                        label = { Text("Reminder Title") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    
+                    OutlinedTextField(
+                        value = reminderDetails,
+                        onValueChange = { reminderDetails = it },
+                        label = { Text("Details") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        maxLines = 4
+                    )
+                    
+                    Text("Assign to family members:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        allowedUsers.forEach { user ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (user.mobile in assignedTo) {
+                                            assignedTo.remove(user.mobile)
+                                        } else {
+                                            assignedTo.add(user.mobile)
+                                        }
+                                    }
+                                    .padding(8.dp)
+                            ) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = user.mobile in assignedTo,
+                                    onCheckedChange = {
+                                        if (it) {
+                                            assignedTo.add(user.mobile)
+                                        } else {
+                                            assignedTo.remove(user.mobile)
+                                        }
+                                    }
+                                )
+                                Column {
+                                    Text(user.name, fontWeight = FontWeight.Bold)
+                                    Text(user.mobile, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TextButton(onClick = { showCreateReminder = false }, modifier = Modifier.weight(1f)) {
+                            Text("Cancel")
+                        }
+                        Button(
+                            onClick = {
+                                if (reminderTitle.isNotBlank()) {
+                                    viewModel.addReminder(reminderTitle, reminderDetails, assignedTo.toList())
+                                    reminderTitle = ""
+                                    reminderDetails = ""
+                                    assignedTo.clear()
+                                    showCreateReminder = false
+                                    Toast.makeText(context, "Reminder created!", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Create")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Header with create button
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shadowElevation = 4.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("📌 Reminders", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text("Manage family reminders", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
+                }
+                Button(
+                    onClick = { showCreateReminder = true },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("+ New")
+                }
+            }
+        }
+        
+        if (reminders.isEmpty()) {
+            // Empty state
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    Icons.Default.Notifications,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "No reminders yet",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    "Create a reminder for your family",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            // Reminders list
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = 16.dp)
+            ) {
+                items(reminders) { reminder ->
+                    ReminderCard(
+                        reminder = reminder,
+                        creatorName = allowedUsers.find { it.mobile == reminder.createdBy }?.name ?: reminder.createdBy,
+                        assignedUserNames = reminder.assignedMembers.mapNotNull { mobile ->
+                            allowedUsers.find { it.mobile == mobile }?.name
+                        },
+                        onComplete = { viewModel.markReminderComplete(reminder) },
+                        onDelete = { viewModel.deleteReminder(reminder) },
+                        onSnooze = { minutes -> viewModel.snoozeReminderNotification(reminder, minutes) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReminderCard(
+    reminder: com.familyconnect.app.data.model.ReminderItem,
+    creatorName: String,
+    assignedUserNames: List<String>,
+    onComplete: () -> Unit,
+    onDelete: () -> Unit,
+    onSnooze: (Int) -> Unit
+) {
+    var showSnoozeOptions by remember { mutableStateOf(false) }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = if (reminder.completed) 
+                MaterialTheme.colorScheme.surfaceVariant 
+            else 
+                MaterialTheme.colorScheme.surface
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header with title and completion status
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (reminder.completed) {
+                            Icon(
+                                Icons.Filled.CheckCircle,
+                                contentDescription = "Completed",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                            )
+                        }
+                        Text(
+                            reminder.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            textDecoration = if (reminder.completed) androidx.compose.ui.text.style.TextDecoration.LineThrough else androidx.compose.ui.text.style.TextDecoration.None
+                        )
+                    }
+                }
+            }
+            
+            // Details
+            if (reminder.details.isNotBlank()) {
+                Text(
+                    reminder.details,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                        .padding(12.dp)
+                )
+            }
+            
+            // Creator info
+            Text(
+                "Created by $creatorName",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            // Assigned members
+            if (assignedUserNames.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("👥 Assigned to:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    assignedUserNames.forEach { name ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.heightIn(max = 24.dp)
+                        ) {
+                            Text(
+                                name,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+            
+            // Snooze time if snoozed
+            if (reminder.lastSnoozedUntil != null) {
+                Text(
+                    "⏱️ Snoozed until ${java.text.SimpleDateFormat("HH:mm").format(java.util.Date(reminder.lastSnoozedUntil))}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFFF9800)
+                )
+            }
+            
+            // Snooze options or action buttons
+            if (showSnoozeOptions) {
+                Text("Snooze for:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    reminder.snoozeOptions.forEach { minutes ->
+                        OutlinedButton(
+                            onClick = { 
+                                onSnooze(minutes)
+                                showSnoozeOptions = false
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.heightIn(max = 36.dp)
+                        ) {
+                            Text(
+                                when (minutes) {
+                                    5 -> "5 min"
+                                    15 -> "15 min"
+                                    30 -> "30 min"
+                                    60 -> "1 hr"
+                                    1440 -> "1 day"
+                                    else -> "$minutes min"
+                                },
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+            }
+            
+            // Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (!reminder.completed) {
+                    OutlinedButton(
+                        onClick = { showSnoozeOptions = !showSnoozeOptions },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color(0xFFFF9800)
+                        )
+                    ) {
+                        Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Snooze", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                
+                Button(
+                    onClick = onComplete,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = if (reminder.completed) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (reminder.completed) "Completed" else "Complete", style = MaterialTheme.typography.labelSmall)
+                }
+                
+                OutlinedButton(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Delete", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
 private fun SettingsScreen(viewModel: FamilyViewModel, role: FamilyRole) {
     val darkMode by viewModel.darkMode.collectAsState(initial = false)
+    val currentUser = viewModel.currentUser
     var showMemberManagement by remember { mutableStateOf(false) }
     var showAdminSetup by remember { mutableStateOf(false) }
     
@@ -2555,6 +3098,16 @@ private fun SettingsScreen(viewModel: FamilyViewModel, role: FamilyRole) {
 
             Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (currentUser != null) {
+                        Text("📱 Logged in as:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            "${currentUser.name} (${currentUser.mobile})",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(start = 8.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    }
                     Button(
                         onClick = { viewModel.logout() },
                         modifier = Modifier.fillMaxWidth(),

@@ -225,29 +225,10 @@ class CallListenerService : Service() {
                             Log.d(TAG, "📞 Incoming call detected: $callId from $fromUserName")
                             notifiedCallIds.add(callId)
 
-                            // 🔥 Use Telecom Framework for system-level call handling
-                            Log.d(TAG, "🚀 Triggering incoming call via TelecomManager...")
+                            // � Use direct CallForegroundService for incoming call handling
+                            Log.d(TAG, "📱 Triggering incoming call via CallForegroundService...")
                             try {
-                                val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
-                                if (telecomManager == null) {
-                                    Log.e(TAG, "   ❌ TelecomManager not available, falling back to CallForegroundService")
-                                    fallbackToCallForegroundService(callId, threadId, fromUserName, callType)
-                                } else {
-                                    val handle = android.telecom.PhoneAccountHandle(
-                                        ComponentName(this@CallListenerService, com.familyconnect.app.telecom.MyConnectionService::class.java),
-                                        "FamilyConnectCall"
-                                    )
-
-                                    val extras = Bundle().apply {
-                                        putString("callId", callId)
-                                        putString("threadId", threadId)
-                                        putString("callerName", fromUserName)
-                                        putString("callType", callType)
-                                    }
-
-                                    telecomManager.addNewIncomingCall(handle, extras)
-                                    Log.d(TAG, "   ✅ Telecom incoming call triggered")
-                                }
+                                fallbackToCallForegroundService(callId, threadId, fromUserName, callType)
                             } catch (e: Exception) {
                                 Log.e(TAG, "   ❌ Error triggering telecom call: ${e.message}", e)
                                 fallbackToCallForegroundService(callId, threadId, fromUserName, callType)

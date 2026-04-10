@@ -13,14 +13,19 @@ import com.familyconnect.app.data.model.FamilyEvent
 import com.familyconnect.app.data.model.FamilyRole
 import com.familyconnect.app.data.model.MediaItem
 import com.familyconnect.app.data.model.NoteItem
+import com.familyconnect.app.data.model.ReminderItem
 import com.familyconnect.app.data.model.TaskItem
 import com.familyconnect.app.data.model.UserProfile
 import com.familyconnect.app.notifications.NotificationHelper
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 private val Context.dataStore by preferencesDataStore(name = "family_settings")
@@ -30,13 +35,114 @@ class FamilyRepository(
     private val userDao: UserDao
 ) {
     private val eventExpiryWindowMillis = TimeUnit.DAYS.toMillis(3)
+    private val database = FirebaseDatabase.getInstance("https://family-connect-app-a219b-default-rtdb.asia-southeast1.firebasedatabase.app")
 
-    private val events = MutableStateFlow(
-        listOf(
-            FamilyEvent(1, "Parent Meeting", "2026-03-28 18:00", "Blue", recurring = false, reminderMinutes = 30, createdAtEpochMillis = System.currentTimeMillis()),
-            FamilyEvent(2, "Sunday Dinner", "2026-03-29 20:00", "Green", recurring = true, reminderMinutes = 60, createdAtEpochMillis = System.currentTimeMillis())
-        )
-    )
+    // Events flow from Firebase - START EMPTY, Firebase will populate
+    private val events = MutableStateFlow<List<FamilyEvent>>(emptyList())
+    
+    // Reminders real-time listener
+    private var remindersListener: ValueEventListener? = null
+    
+    init {
+        loadEventsFromFirebase()
+        setupRemindersRealTimeListener()
+    }
+    
+    private fun loadEventsFromFirebase() {
+        try {
+            Log.d("FamilyRepository", "📌 loadEventsFromFirebase() STARTED")
+            
+            val eventsRef = database.getReference("events")
+            
+            // Use getValue (single read) instead of listener to avoid empty snapshot issue
+            eventsRef.get().addOnSuccessListener { snapshot ->
+                Log.d("FamilyRepository", "✅ Firebase data received: ${snapshot.childrenCount} events")
+                
+                try {
+                    val eventList = mutableListOf<FamilyEvent>()
+                    var successCount = 0
+                    var failureCount = 0
+                    
+                    for (child in snapshot.children) {
+                        try {
+                            val eventId = child.key
+                            Log.d("FamilyRepository", "Parsing event: $eventId")
+                            
+                            // Custom deserialization to handle invitedMembers as string or list
+                            val eventData = child.value as? Map<*, *>
+                            if (eventData != null) {
+                                val event = deserializeEventFromMap(eventData as Map<String, Any?>)
+                                if (event != null) {
+                                    eventList.add(event)
+                                    successCount++
+                                    Log.d("FamilyRepository", "✅ Added event: ${event.title} (invited: ${event.invitedMembers})")
+                                } else {
+                                    failureCount++
+                                    Log.w("FamilyRepository", "⚠️ Event null for key: $eventId")
+                                }
+                            } else {
+                                failureCount++
+                                Log.w("FamilyRepository", "⚠️ Event data null for key: $eventId")
+                            }
+                        } catch (e: Exception) {
+                            failureCount++
+                            Log.e("FamilyRepository", "❌ Error parsing event ${child.key}: ${e.message}", e)
+                        }
+                    }
+                    
+                    events.value = eventList
+                    Log.d("FamilyRepository", "✅ LOADED: $successCount events, FAILED: $failureCount")
+                } catch (e: Exception) {
+                    Log.e("FamilyRepository", "❌ Error processing: ${e.message}", e)
+                }
+            }.addOnFailureListener { error ->
+                Log.e("FamilyRepository", "❌ Firebase error: ${error.message}", error)
+            }
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "❌ Exception: ${e.message}", e)
+        }
+    }
+
+    private fun deserializeEventFromMap(data: Map<String, Any?>): FamilyEvent? {
+        return try {
+            val id = (data["id"] as? Number)?.toInt() ?: return null
+            val title = data["title"] as? String ?: ""
+            val description = data["description"] as? String ?: ""
+            val location = data["location"] as? String ?: ""
+            val dateTime = (data["dateTime"] as? Number)?.toLong() ?: 0L
+            val colorTag = data["colorTag"] as? String ?: "Blue"
+            val category = data["category"] as? String ?: "Other"
+            val recurring = data["recurring"] as? Boolean ?: false
+            val reminderMinutes = (data["reminderMinutes"] as? Number)?.toInt() ?: 1440
+            val createdBy = data["createdBy"] as? String ?: ""
+            val createdAtEpochMillis = (data["createdAtEpochMillis"] as? Number)?.toLong() ?: 0L
+            
+            // Handle invitedMembers as either string or list
+            val invitedMembers = when (val invited = data["invitedMembers"]) {
+                is String -> listOf(invited)  // Single string → convert to list
+                is List<*> -> invited.mapNotNull { it as? String }  // Already a list
+                else -> emptyList()
+            }
+            
+            FamilyEvent(
+                id = id,
+                title = title,
+                description = description,
+                location = location,
+                dateTime = dateTime,
+                colorTag = colorTag,
+                category = category,
+                recurring = recurring,
+                reminderMinutes = reminderMinutes,
+                invitedMembers = invitedMembers,
+                createdBy = createdBy,
+                createdAtEpochMillis = createdAtEpochMillis
+            )
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "❌ Deserialization error: ${e.message}", e)
+            null
+        }
+    }
 
     private val tasks = MutableStateFlow(
         listOf(
@@ -96,9 +202,20 @@ class FamilyRepository(
     }
 
     fun observeEvents(): Flow<List<FamilyEvent>> = events.map { list ->
+        list.sortedByDescending { it.createdAtEpochMillis }
+    }
+
+    // PUBLIC: Force reload events from Firebase (call after login)
+    fun forceReloadEventsFromFirebase() {
+        loadEventsFromFirebase()
+    }
+
+    fun observeEventsForUser(userMobile: String?): Flow<List<FamilyEvent>> = events.map { list ->
         val now = System.currentTimeMillis()
+        val trimmedMobile = userMobile?.trim() ?: ""  // TRIM
         list.filter { event ->
-            now <= event.createdAtEpochMillis + eventExpiryWindowMillis
+            now <= event.createdAtEpochMillis + eventExpiryWindowMillis &&
+            (event.createdBy == trimmedMobile || trimmedMobile in event.invitedMembers)
         }.sortedByDescending { it.createdAtEpochMillis }
     }
     fun observeTasks(): Flow<List<TaskItem>> = tasks
@@ -309,8 +426,28 @@ class FamilyRepository(
     }
 
     suspend fun addEvent(event: FamilyEvent) {
-        events.value = events.value + event
-        NotificationHelper.post(context, event.id + 1000, "Event added", event.title)
+        // Store trimmed version to ensure consistency
+        val trimmedEvent = event.copy(
+            createdBy = event.createdBy.trim(),
+            invitedMembers = event.invitedMembers.map { it.trim() }
+        )
+        
+        try {
+            // Save to Firebase
+            database.getReference("events").child(trimmedEvent.id.toString()).setValue(trimmedEvent).await()
+            NotificationHelper.post(context, event.id + 1000, "Event added", event.title)
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "Error saving event: ${e.message}")
+        }
+    }
+
+    suspend fun deleteEvent(event: FamilyEvent) {
+        try {
+            // Delete from Firebase
+            database.getReference("events").child(event.id.toString()).removeValue().await()
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "Error deleting event: ${e.message}")
+        }
     }
 
     suspend fun addTask(task: TaskItem) {
@@ -488,7 +625,340 @@ class FamilyRepository(
         )
     }
 
+    // ============ REMINDERS METHODS ============
+    
+    private val reminders = MutableStateFlow<List<ReminderItem>>(emptyList())
+    
+    fun observeReminders(): Flow<List<ReminderItem>> = reminders.map { list ->
+        list.sortedByDescending { it.createdAtEpochMillis }
+    }
+    
+    fun addReminder(reminder: ReminderItem) {
+        try {
+            val remindersRef = database.getReference("reminders")
+            val reminderId = remindersRef.push().key ?: UUID.randomUUID().toString()
+            val reminderWithId = reminder.copy(id = reminderId)
+            
+            remindersRef.child(reminderId).setValue(reminderWithId).addOnSuccessListener {
+                Log.d("FamilyRepository", "✅ Reminder added: ${reminderWithId.title}")
+                loadRemindersFromFirebase()
+            }.addOnFailureListener { error ->
+                Log.e("FamilyRepository", "❌ Error adding reminder: ${error.message}", error)
+            }
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "❌ Exception adding reminder: ${e.message}", e)
+        }
+    }
+    
+    fun deleteReminder(reminderId: String) {
+        try {
+            val remindersRef = database.getReference("reminders").child(reminderId)
+            remindersRef.removeValue().addOnSuccessListener {
+                Log.d("FamilyRepository", "✅ Reminder deleted: $reminderId")
+                loadRemindersFromFirebase()
+            }.addOnFailureListener { error ->
+                Log.e("FamilyRepository", "❌ Error deleting reminder: ${error.message}", error)
+            }
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "❌ Exception deleting reminder: ${e.message}", e)
+        }
+    }
+    
+    fun updateReminder(reminder: ReminderItem) {
+        try {
+            val remindersRef = database.getReference("reminders").child(reminder.id)
+            remindersRef.setValue(reminder).addOnSuccessListener {
+                Log.d("FamilyRepository", "✅ Reminder updated: ${reminder.title}")
+                loadRemindersFromFirebase()
+            }.addOnFailureListener { error ->
+                Log.e("FamilyRepository", "❌ Error updating reminder: ${error.message}", error)
+            }
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "❌ Exception updating reminder: ${e.message}", e)
+        }
+    }
+    
+    fun markReminderComplete(reminderId: String) {
+        try {
+            val reminderRef = database.getReference("reminders").child(reminderId)
+            reminderRef.get().addOnSuccessListener { snapshot ->
+                val reminderData = snapshot.value as? Map<*, *>
+                if (reminderData != null) {
+                    val reminder = deserializeReminderFromMap(reminderId, reminderData as Map<String, Any?>)
+                    if (reminder != null) {
+                        val completedReminder = reminder.copy(completed = true)
+                        reminderRef.setValue(completedReminder).addOnSuccessListener {
+                            Log.d("FamilyRepository", "✅ Reminder marked complete: $reminderId")
+                            loadRemindersFromFirebase()
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "❌ Exception marking reminder complete: ${e.message}", e)
+        }
+    }
+    
+    fun snoozeReminderNotification(reminderId: String, snoozeMinutes: Int) {
+        try {
+            val reminderRef = database.getReference("reminders").child(reminderId)
+            reminderRef.get().addOnSuccessListener { snapshot ->
+                val reminderData = snapshot.value as? Map<*, *>
+                if (reminderData != null) {
+                    val reminder = deserializeReminderFromMap(reminderId, reminderData as Map<String, Any?>)
+                    if (reminder != null) {
+                        val snoozedUntil = System.currentTimeMillis() + (snoozeMinutes * 60 * 1000L)
+                        val snoozedReminder = reminder.copy(
+                            lastSnoozedUntil = snoozedUntil,
+                            nextNotificationTime = snoozedUntil
+                        )
+                        reminderRef.setValue(snoozedReminder).addOnSuccessListener {
+                            Log.d("FamilyRepository", "✅ Reminder snoozed for $snoozeMinutes min: $reminderId")
+                            
+                            // 🔥 CRITICAL: Schedule alarm to re-trigger notification after snooze expires
+                            scheduleReminderAlarm(context, reminderId, reminder.title, snoozedUntil)
+                            
+                            loadRemindersFromFirebase()
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "❌ Exception snoozing reminder: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * 🔥 Schedule an alarm using AlarmManager to trigger notification when snooze expires
+     */
+    private fun scheduleReminderAlarm(
+        context: android.content.Context,
+        reminderId: String,
+        reminderTitle: String,
+        triggerAtMillis: Long
+    ) {
+        try {
+            val alarmManager = context.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+            
+            val intent = android.content.Intent(context, com.familyconnect.app.notifications.ReminderAlarmReceiver::class.java).apply {
+                action = com.familyconnect.app.notifications.ReminderAlarmReceiver.ACTION_SNOOZE_EXPIRED
+                putExtra(com.familyconnect.app.notifications.ReminderAlarmReceiver.EXTRA_REMINDER_ID, reminderId)
+                putExtra(com.familyconnect.app.notifications.ReminderAlarmReceiver.EXTRA_REMINDER_TITLE, reminderTitle)
+            }
+            
+            val pendingIntent = android.app.PendingIntent.getBroadcast(
+                context,
+                reminderId.hashCode(),
+                intent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+            
+            // Schedule exact alarm
+            try {
+                alarmManager.setExactAndAllowWhileIdle(
+                    android.app.AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+                Log.d("FamilyRepository", "⏰ Alarm scheduled for reminder '$reminderTitle' at ${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date(triggerAtMillis))}")
+            } catch (e: Exception) {
+                // Fallback: setAndAllowWhileIdle if setExactAndAllowWhileIdle fails
+                Log.w("FamilyRepository", "⚠️ setExactAndAllowWhileIdle failed, using setAndAllowWhileIdle: ${e.message}")
+                alarmManager.setAndAllowWhileIdle(
+                    android.app.AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "❌ Error scheduling alarm: ${e.message}", e)
+        }
+    }
+    
+    private fun setupRemindersRealTimeListener() {
+        try {
+            Log.d("FamilyRepository", "📌 Setting up REAL-TIME listener for reminders...")
+            
+            val remindersRef = database.getReference("reminders")
+            
+            // Remove old listener if exists
+            remindersListener?.let { remindersRef.removeEventListener(it) }
+            
+            // Create new real-time listener
+            remindersListener = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    Log.d("FamilyRepository", "✅ Reminders REAL-TIME update received: ${snapshot.childrenCount} reminders")
+                    
+                    try {
+                        val reminderList = mutableListOf<ReminderItem>()
+                        var successCount = 0
+                        var failureCount = 0
+                        
+                        for (child in snapshot.children) {
+                            try {
+                                val reminderId = child.key ?: continue
+                                val reminderData = child.value as? Map<*, *>
+                                if (reminderData != null) {
+                                    val reminder = deserializeReminderFromMap(reminderId, reminderData as Map<String, Any?>)
+                                    if (reminder != null) {
+                                        reminderList.add(reminder)
+                                        successCount++
+                                        Log.d("FamilyRepository", "✅ Added reminder: ${reminder.title}")
+                                    } else {
+                                        failureCount++
+                                    }
+                                } else {
+                                    failureCount++
+                                }
+                            } catch (e: Exception) {
+                                failureCount++
+                                Log.e("FamilyRepository", "❌ Error parsing reminder ${child.key}: ${e.message}", e)
+                            }
+                        }
+                        
+                        reminders.value = reminderList
+                        Log.d("FamilyRepository", "✅ SYNCED: $successCount reminders, FAILED: $failureCount")
+                    } catch (e: Exception) {
+                        Log.e("FamilyRepository", "❌ Error processing reminders: ${e.message}", e)
+                    }
+                }
+                
+                override fun onCancelled(error: DatabaseError) {
+                    Log.e("FamilyRepository", "❌ Real-time listener error: ${error.message}", error.toException())
+                }
+            }
+            
+            // Attach the listener - this subscribes to ALL changes
+            remindersRef.addValueEventListener(remindersListener!!)
+            Log.d("FamilyRepository", "🎯 Real-time listener ATTACHED - monitoring /reminders path")
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "❌ Exception setting up real-time listener: ${e.message}", e)
+        }
+    }
+    
+    private fun loadRemindersFromFirebase() {
+        try {
+            Log.d("FamilyRepository", "📌 loadRemindersFromFirebase() STARTED")
+            
+            val remindersRef = database.getReference("reminders")
+            
+            remindersRef.get().addOnSuccessListener { snapshot ->
+                Log.d("FamilyRepository", "✅ Reminders data received: ${snapshot.childrenCount} reminders")
+                
+                try {
+                    val reminderList = mutableListOf<ReminderItem>()
+                    var successCount = 0
+                    var failureCount = 0
+                    
+                    for (child in snapshot.children) {
+                        try {
+                            val reminderId = child.key ?: continue
+                            val reminderData = child.value as? Map<*, *>
+                            if (reminderData != null) {
+                                val reminder = deserializeReminderFromMap(reminderId, reminderData as Map<String, Any?>)
+                                if (reminder != null) {
+                                    reminderList.add(reminder)
+                                    successCount++
+                                    Log.d("FamilyRepository", "✅ Added reminder: ${reminder.title}")
+                                } else {
+                                    failureCount++
+                                }
+                            } else {
+                                failureCount++
+                            }
+                        } catch (e: Exception) {
+                            failureCount++
+                            Log.e("FamilyRepository", "❌ Error parsing reminder ${child.key}: ${e.message}", e)
+                        }
+                    }
+                    
+                    reminders.value = reminderList
+                    Log.d("FamilyRepository", "✅ LOADED: $successCount reminders, FAILED: $failureCount")
+                } catch (e: Exception) {
+                    Log.e("FamilyRepository", "❌ Error processing reminders: ${e.message}", e)
+                }
+            }.addOnFailureListener { error ->
+                Log.e("FamilyRepository", "❌ Firebase error: ${error.message}", error)
+            }
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "❌ Exception: ${e.message}", e)
+        }
+    }
+    
+    private fun deserializeReminderFromMap(reminderId: String, data: Map<String, Any?>): ReminderItem? {
+        return try {
+            val title = data["title"] as? String ?: ""
+            val details = data["details"] as? String ?: ""
+            val createdBy = data["createdBy"] as? String ?: ""
+            val createdAtEpochMillis = (data["createdAtEpochMillis"] as? Number)?.toLong() ?: 0L
+            val completed = data["completed"] as? Boolean ?: false
+            val lastSnoozedUntil = (data["lastSnoozedUntil"] as? Number)?.toLong()
+            val nextNotificationTime = (data["nextNotificationTime"] as? Number)?.toLong()
+            
+            val assignedMembers = when (val assigned = data["assignedMembers"]) {
+                is String -> listOf(assigned)
+                is List<*> -> assigned.mapNotNull { it as? String }
+                else -> emptyList()
+            }
+            
+            val snoozeOptions = when (val options = data["snoozeOptions"]) {
+                is List<*> -> options.mapNotNull { (it as? Number)?.toInt() }
+                else -> listOf(5, 15, 30, 60, 1440)
+            }
+            
+            ReminderItem(
+                id = reminderId,
+                title = title,
+                details = details,
+                createdBy = createdBy,
+                createdAtEpochMillis = createdAtEpochMillis,
+                assignedMembers = assignedMembers,
+                snoozeOptions = snoozeOptions,
+                lastSnoozedUntil = lastSnoozedUntil,
+                nextNotificationTime = nextNotificationTime,
+                completed = completed
+            )
+        } catch (e: Exception) {
+            Log.e("FamilyRepository", "❌ Reminder deserialization error: ${e.message}", e)
+            null
+        }
+    }
+
     companion object {
+        // 🔥 PERSISTENT: Events shared across all repository instances (survives user sessions)
+        val persistentEvents = MutableStateFlow(
+            listOf(
+                FamilyEvent(
+                    id = 1,
+                    title = "Parent Meeting",
+                    description = "Discuss school progress",
+                    location = "Home",
+                    dateTime = System.currentTimeMillis() + (5 * 24 * 60 * 60 * 1000),
+                    colorTag = "Blue",
+                    category = "Meeting",
+                    recurring = false,
+                    reminderMinutes = 30,
+                    invitedMembers = listOf(),
+                    createdBy = "9876543210",  // Demo event creator
+                    createdAtEpochMillis = System.currentTimeMillis()
+                ),
+                FamilyEvent(
+                    id = 2,
+                    title = "Sunday Dinner",
+                    description = "Family gathering",
+                    location = "Dining Hall",
+                    dateTime = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000),
+                    colorTag = "Green",
+                    category = "Meal",
+                    recurring = true,
+                    reminderMinutes = 60,
+                    invitedMembers = listOf(),
+                    createdBy = "9876543210",  // Demo event creator
+                    createdAtEpochMillis = System.currentTimeMillis()
+                )
+            )
+        )
+        
         const val DEFAULT_ADMIN_SETUP_PIN = "2468"
         val ADMIN_SETUP_PIN_KEY = stringPreferencesKey("admin_setup_pin")
         val DARK_MODE_KEY = booleanPreferencesKey("dark_mode")

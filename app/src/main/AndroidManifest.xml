@@ -98,15 +98,14 @@
             android:windowSoftInputMode="adjustResize"
             android:keepScreenOn="true" />
 
-        <!-- Telecom ConnectionService for system-level call handling (WhatsApp/Truecaller approach) -->
-        <service
-            android:name=".telecom.MyConnectionService"
-            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
-            android:exported="true">
+        <!-- Broadcast receiver for reminder snooze timer expiration -->
+        <receiver
+            android:name=".notifications.ReminderAlarmReceiver"
+            android:exported="false">
             <intent-filter>
-                <action android:name="android.telecom.ConnectionService" />
+                <action android:name="com.familyconnect.app.SNOOZE_EXPIRED" />
             </intent-filter>
-        </service>
+        </receiver>
 
     </application>
 

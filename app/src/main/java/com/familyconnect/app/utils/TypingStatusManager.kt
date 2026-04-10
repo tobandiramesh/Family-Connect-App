@@ -54,9 +54,9 @@ class TypingStatusManager(
                 }
             }
             
-            // Auto-clear typing after 3 seconds of inactivity
+            // Auto-clear typing after 1.5 seconds of inactivity
             typingTimeoutJob = coroutineScope.launch {
-                delay(3000)
+                delay(1500)
                 Log.d(TAG, "⏱️ Typing timeout - clearing status")
                 clearTypingInFirebase(threadId, userMobile)
             }
@@ -71,30 +71,21 @@ class TypingStatusManager(
             Log.d(TAG, "Writing typing to: $path")
             
             val typingRef = database.getReference(path)
-            // Add error callbacks to detect permission/rule violations
-            typingRef.child("name").setValue(userName) { error, _ ->
-                if (error != null) {
-                    Log.e(TAG, "Write failed (name): ${error.message}")
-                } else {
-                    Log.d(TAG, "name set")
-                }
-            }
-            typingRef.child("timestamp").setValue(System.currentTimeMillis()) { error, _ ->
-                if (error != null) {
-                    Log.e(TAG, "Write failed (timestamp): ${error.message}")
-                } else {
-                    Log.d(TAG, "timestamp set")
-                }
-            }
-            typingRef.child("isTyping").setValue(true) { error, _ ->
-                if (error != null) {
-                    Log.e(TAG, "Write failed (isTyping): ${error.message}")
-                } else {
-                    Log.d(TAG, "isTyping set")
-                }
-            }
+            val data = mapOf(
+                "name" to userName,
+                "timestamp" to System.currentTimeMillis(),
+                "isTyping" to true
+            )
             
-            Log.d(TAG, "Typing values set")
+            typingRef.setValue(data) { error, _ ->
+                if (error != null) {
+                    Log.e(TAG, "Write failed: ${error.message}")
+                } else {
+                    Log.d(TAG, "Typing values set atomically")
+                    // Set up auto-remove on disconnect
+                    typingRef.onDisconnect().removeValue()
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Exception in setTypingInFirebase: ${e.message}", e)
         }

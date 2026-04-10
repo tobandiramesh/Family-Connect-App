@@ -664,5 +664,46 @@ object FirebaseService {
         val sdf = SimpleDateFormat("MMM dd", Locale.getDefault())
         return sdf.format(Date(timestamp))
     }
+
+    // 📝 Observe typing status for a thread (excludes current user)
+    fun observeTypingStatus(threadId: String, currentUserMobile: String): Flow<List<com.familyconnect.app.data.model.TypingStatus>> = callbackFlow {
+        try {
+            val path = "typing/$threadId"
+            Log.d(TAG, "Listening: $path")
+            
+            val typingRef = database.getReference(path)
+            
+            val listener = object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    try {
+                        val typingList = mutableListOf<com.familyconnect.app.data.model.TypingStatus>()
+                        snapshot.children.forEach { statusSnapshot ->
+                            val status = statusSnapshot.getValue(com.familyconnect.app.data.model.TypingStatus::class.java)
+                            if (status != null && status.userMobile != currentUserMobile) {
+                                typingList.add(status)
+                            }
+                        }
+                        trySend(typingList)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing typing status", e)
+                    }
+                }
+                
+                override fun onCancelled(error: DatabaseError) {
+                    close(error.toException())
+                }
+            }
+            
+            typingRef.addValueEventListener(listener)
+            Log.d(TAG, "Listener attached for typing status")
+            
+            awaitClose { 
+                typingRef.removeEventListener(listener)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in observeTypingStatus", e)
+            close(e)
+        }
+    }
 }
 

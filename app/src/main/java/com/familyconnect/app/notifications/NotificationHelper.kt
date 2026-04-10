@@ -32,13 +32,6 @@ object NotificationHelper {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(NotificationManager::class.java)
 
-            // ✅ DELETE old channels and recreate with fresh settings (important after app restart)
-            try {
-                manager.deleteNotificationChannel(CHANNEL_CALLS)
-            } catch (e: Exception) {
-                // Channel might not exist
-            }
-
             // General updates channel
             val channel = NotificationChannel(
                 CHANNEL_ID,
@@ -48,22 +41,23 @@ object NotificationHelper {
             channel.description = "Event, task, and message reminders"
             manager.createNotificationChannel(channel)
 
-            // Incoming calls channel (HIGH priority with ringtone) - RECREATED FRESH
-            val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            // Incoming calls channel (MAX priority with ringtone)
             val callChannel = NotificationChannel(
                 CHANNEL_CALLS,
                 "Incoming Calls",
-                NotificationManager.IMPORTANCE_MAX  // ✅ MAX priority ensures sound plays
+                NotificationManager.IMPORTANCE_MAX
             ).apply {
                 description = "Audio and video call notifications"
                 setSound(
-                    ringtoneUri,
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
                     AudioAttributes.Builder()
                         .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                 )
                 enableVibration(true)
+                enableLights(true)
+                setBypassDnd(true)  // Allow sound even in Do Not Disturb mode
                 vibrationPattern = longArrayOf(0, 1000, 500, 1000, 500, 1000)
                 lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             }
@@ -93,7 +87,6 @@ object NotificationHelper {
         }
     }
 
-    @androidx.annotation.RequiresPermission(android.Manifest.permission.POST_NOTIFICATIONS)
     fun post(context: Context, id: Int, title: String, body: String) {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -132,73 +125,69 @@ object NotificationHelper {
             NotificationManagerCompat.from(context).notify(id, notification)
         }
     }
-    @androidx.annotation.RequiresPermission(android.Manifest.permission.POST_NOTIFICATIONS)    fun postIncomingCallNotification(
+
+    // ✅ DISABLED: This function is NOT used - CallForegroundService handles all call notifications
+    // Why disabled? It was creating a CONFLICTING PendingIntent for IncomingCallActivity
+    // Problem: Multiple PendingIntent creators for same activity cause Android caching collisions
+    // Solution: Only CallForegroundService.triggerIncomingCall() creates call notifications now
+    // That function uses Data URI + FLAG_ONE_SHOT to ensure no collisions
+    /*
+    fun postIncomingCallNotification(
         context: Context,
         callId: String,
         threadId: String,
         callerName: String,
         callType: String
     ) {
-        // Generate UNIQUE notification ID based on callId
-        val notificationId = callId.hashCode().let { if (it < 0) -it else it }
+        Log.d("NotificationHelper", "📢 postIncomingCallNotification: callId=$callId, caller=$callerName")
         
-        // ✅ SIMPLE: Intent to MainActivity with call data
-        val launchIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        val intent = Intent(context, IncomingCallActivity::class.java).apply {
+            action = "com.familyconnect.app.INCOMING_CALL"
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra(EXTRA_CALL_ID, callId)
             putExtra(EXTRA_THREAD_ID, threadId)
             putExtra(EXTRA_CALLER_NAME, callerName)
             putExtra(EXTRA_CALL_TYPE, callType)
         }
+
+        // Use FLAG_IMMUTABLE with unique requestCode based on callId
+        val requestCode = Math.abs(callId.hashCode())
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Generate unique notification ID
+        val notificationId = Math.abs(callId.hashCode())
         
-        val contentPendingIntent = PendingIntent.getActivity(
-            context,
-            notificationId,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-        )
-
-        // ✅ FULL-SCREEN INTENT: Same as content intent (shows app above lock screen)
-        val fullScreenPendingIntent = PendingIntent.getActivity(
-            context,
-            notificationId + 500,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-        )
-
-
-
-        val callLabel = if (callType == "video") "📹 Video Call" else "☎️ Audio Call"
-        val contentText = "$callerName is calling"
-
-        // ✅ Get ringtone URI
-        val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        Log.d("NotificationHelper", "   📋 Notification ID: $notificationId, Request Code: $requestCode")
+        Log.d("NotificationHelper", "   🔗 PendingIntent created for IncomingCallActivity")
 
         val notification = NotificationCompat.Builder(context, CHANNEL_CALLS)
             .setSmallIcon(android.R.drawable.ic_menu_call)
-            .setContentTitle(callLabel)
-            .setContentText(contentText)
-            .setTicker("$callLabel from $callerName")
+            .setContentTitle("📞 Incoming Call")
+            .setContentText("$callerName is calling...")
+            .setContentIntent(pendingIntent)
+            .setFullScreenIntent(pendingIntent, true)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
-            .setAutoCancel(true)
-            .setSound(ringtoneUri)  // ✅ Set sound (audio attributes set in channel)
-            .setVibrate(longArrayOf(0, 1000, 500, 1000, 500, 1000))
-            .setFullScreenIntent(fullScreenPendingIntent, true)
-            .setContentIntent(contentPendingIntent)
-            .setColorized(true)
-            .setColor(0xFF6366F1.toInt())
+            .setAutoCancel(false)  // Don't auto-cancel so user intentionally dismisses
+            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))  // Explicit sound
+            .setVibrate(longArrayOf(0, 500, 300, 500))  // Vibration pattern
             .build()
 
-        // Post notification
         try {
             NotificationManagerCompat.from(context).notify(notificationId, notification)
+            Log.d("NotificationHelper", "✅ Notification posted successfully with ID: $notificationId")
         } catch (e: Exception) {
-            // Silently fail
+            Log.e("NotificationHelper", "❌ Error posting notification: ${e.message}", e)
         }
     }
+    */
 
     fun cancelCallNotification(context: Context, callId: String) {
         val notificationId = callId.hashCode().let { if (it < 0) -it else it }

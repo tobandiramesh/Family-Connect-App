@@ -99,3 +99,17 @@ data class NoteItem(
     val editedBy: String,
     val editedAt: String
 )
+
+// 📌 Reminder data model
+data class ReminderItem(
+    val id: String = "",
+    val title: String = "",
+    val details: String = "",
+    val createdBy: String = "",
+    val createdAtEpochMillis: Long = 0,
+    val assignedMembers: List<String> = emptyList(),  // mobile numbers
+    val snoozeOptions: List<Int> = listOf(5, 15, 30, 60, 1440),  // minutes: 5, 15, 30, 1hr, 1 day
+    val lastSnoozedUntil: Long? = null,  // null means not snoozed
+    val nextNotificationTime: Long? = null,  // when to show next notification
+    val completed: Boolean = false
+)

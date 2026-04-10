@@ -18,6 +18,7 @@ import com.familyconnect.app.data.model.FamilyRole
 import com.familyconnect.app.data.model.MediaItem
 import com.familyconnect.app.data.model.NoteItem
 import com.familyconnect.app.data.model.OnlineUser
+import com.familyconnect.app.data.model.ReminderItem
 import com.familyconnect.app.data.model.TaskItem
 import com.familyconnect.app.data.model.TypingStatus
 import com.familyconnect.app.data.model.UserProfile
@@ -130,6 +131,7 @@ class FamilyViewModel(
         initialValue = emptyList()
     )
 
+    // Simply observe all events - filtering by user happens in repository
     val events = repository.observeEvents().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -155,6 +157,13 @@ class FamilyViewModel(
     )
 
     val notes = repository.observeNotes().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    // 📌 Reminders observation
+    val reminders = repository.observeReminders().stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -213,9 +222,9 @@ class FamilyViewModel(
         initialValue = emptyList()
     )
 
-    // 📝 Typing status by user mobile (for contact list display)
-    private val _typingByUserFlow = MutableStateFlow<Map<String, Boolean>>(emptyMap())
-    val typingByUser = _typingByUserFlow.stateIn(
+    // 📝 Typing status by thread (for contact list display)
+    private val _typingByThreadFlow = MutableStateFlow<Map<String, TypingStatus>>(emptyMap())
+    val typingByThread = _typingByThreadFlow.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Lazily,
         initialValue = emptyMap()
@@ -289,6 +298,8 @@ class FamilyViewModel(
                             repository.observeUserChatThreads(result.mobile)
                                 .onEach { threads -> 
                                     _userChatThreadsFlow.value = threads
+                                    // 📝 Start observing typing for ALL threads
+                                    startCombinedTypingObserver(threads, result.mobile)
                                 }
                                 .launchIn(viewModelScope)
                             
@@ -333,7 +344,11 @@ class FamilyViewModel(
                         Log.d("🔥 FamilyViewModel", "🔥 Setting user online in Firebase...")
                         repository.setUserOnline(result.mobile, result.name)
                         
-                        // 🔔 CRITICAL FIX: Save FCM token for this user
+                        // � CRITICAL: Reload events after login to get fresh Firebase data
+                        Log.d("🔥 FamilyViewModel", "🔄 Reloading events from Firebase after login...")
+                        repository.forceReloadEventsFromFirebase()
+                        
+                        // �🔔 CRITICAL FIX: Save FCM token for this user
                         Log.d("🔥 FamilyViewModel", "💾 Saving FCM token for user: ${result.mobile}")
                         FCMService.saveFCMTokenForUser(context, result.mobile)
                         
@@ -347,6 +362,8 @@ class FamilyViewModel(
                             .onEach { threads ->
                                 Log.d("🔥 FamilyViewModel", "💬 Chat threads: ${threads.size} found")
                                 _userChatThreadsFlow.value = threads
+                                // 📝 Start observing typing for ALL threads
+                                startCombinedTypingObserver(threads, result.mobile)
                             }
                             .launchIn(viewModelScope)
                         
@@ -463,18 +480,11 @@ class FamilyViewModel(
             }
         }
         
-        // 📝 Start observing typing status for this thread
+        // 📝 Start observing typing status for this thread (for message view)
         currentUser?.let { user ->
             viewModelScope.launch {
-                repository.observeTypingStatus(thread.threadId, user.mobile).collect { typingUsers ->
+                repository.observeTypingStatus(thread.threadId, user.mobile).collect { typingUsers: List<TypingStatus> ->
                     _typingStatusFlow.value = typingUsers
-                    
-                    // 📝 Update typingByUser map for contact list display
-                    val typingMap = mutableMapOf<String, Boolean>()
-                    typingUsers.forEach { typing ->
-                        typingMap[typing.userMobile] = typing.isTyping
-                    }
-                    _typingByUserFlow.value = typingMap
                 }
             }
         }
@@ -555,8 +565,6 @@ class FamilyViewModel(
         val thread = selectedChatThread
         
         if (current == null) {
-            val msg = "❌ No user"
-            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             return
         }
         if (thread == null) {
@@ -611,25 +619,127 @@ class FamilyViewModel(
         }?.lastMessage?.take(50) ?: ""
     }
 
-    fun isUserTyping(userMobile: String): Boolean {
-        // Show typing only in selected thread
-        return _typingStatusFlow.value.any { it.userMobile == userMobile }
-    }
-
-    // DISABLED - keep typing simple (only in selected thread)
+    // 📝 Global typing observer for all threads (shows on home screen)
     private var typingObserverJob: Job? = null
     
     private fun startCombinedTypingObserver(threads: List<ChatThread>, currentUserMobile: String) {
-        // Not used - typing only shows in selected thread for simplicity
+        try {
+            // Cancel previous job
+            typingObserverJob?.cancel()
+            
+            Log.d("FamilyViewModel", "🔄 Starting combined typing observer for ${threads.size} threads")
+            
+            // Launch combined observer
+            typingObserverJob = viewModelScope.launch {
+                observeTypingForAllThreads(threads, currentUserMobile)
+            }
+        } catch (e: Exception) {
+            Log.e("FamilyViewModel", "Error in startCombinedTypingObserver: ${e.message}", e)
+        }
     }
 
-    private fun observeTypingForAllThreads(threads: List<ChatThread>, currentUserMobile: String) {
-        // DEPRECATED - use startCombinedTypingObserver instead
+    private suspend fun observeTypingForAllThreads(threads: List<ChatThread>, currentUserMobile: String) {
+        try {
+            if (threads.isEmpty()) {
+                Log.d("FamilyViewModel", "No threads to observe for typing")
+                return
+            }
+            
+            Log.d("FamilyViewModel", "📝 Observing typing for ${threads.size} threads")
+            
+            // Launch a coroutine for each thread to observe typing independently
+            threads.forEach { thread ->
+                viewModelScope.launch {
+                    try {
+                        Log.d("FamilyViewModel", "📝 Added typing observer for thread: ${thread.threadId}")
+                        repository.observeTypingStatus(thread.threadId, currentUserMobile).collect { typingUsers ->
+                            // Update typing map by threadId
+                            val currentMap = _typingByThreadFlow.value.toMutableMap()
+                            
+                            // Get the first typing user (if any)
+                            val typingUser = typingUsers.firstOrNull { it.isTyping }
+                            
+                            if (typingUser != null) {
+                                currentMap[thread.threadId] = typingUser
+                            } else {
+                                currentMap.remove(thread.threadId)
+                            }
+                            
+                            Log.d("FamilyViewModel", "📝 Typing updated from thread ${thread.threadId}: ${currentMap.size} threads with typing")
+                            _typingByThreadFlow.value = currentMap
+                        }
+                    } catch (e: Exception) {
+                        Log.e("FamilyViewModel", "Error observing thread ${thread.threadId}: ${e.message}")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("FamilyViewModel", "Error in observeTypingForAllThreads: ${e.message}", e)
+        }
     }
 
     fun addEvent(event: FamilyEvent) {
+        Log.d("FamilyViewModel", "addEvent: ${event.title} (invites: ${event.invitedMembers.size})")
         viewModelScope.launch {
             repository.addEvent(event)
+            repository.forceReloadEventsFromFirebase()
+        }
+    }
+
+    fun deleteEvent(event: FamilyEvent) {
+        viewModelScope.launch {
+            repository.deleteEvent(event)
+            repository.forceReloadEventsFromFirebase()
+        }
+    }
+
+    fun markEventComplete(event: FamilyEvent) {
+        // Mark as complete by showing a notification
+        viewModelScope.launch {
+            repository.deleteEvent(event)
+            repository.forceReloadEventsFromFirebase()
+            NotificationHelper.post(context, event.id + 5000, "Event Completed", "✅ ${event.title} marked as done")
+        }
+    }
+
+    // ============ REMINDER METHODS ============
+
+    fun addReminder(title: String, details: String, assignedMembers: List<String>) {
+        viewModelScope.launch {
+            val reminder = ReminderItem(
+                title = title,
+                details = details,
+                createdBy = currentUser?.mobile ?: "unknown",
+                createdAtEpochMillis = System.currentTimeMillis(),
+                assignedMembers = assignedMembers,
+                snoozeOptions = listOf(5, 15, 30, 60, 1440),  // 5min, 15min, 30min, 1hr, 1 day
+                completed = false
+            )
+            repository.addReminder(reminder)
+            
+            // Post notification to assigned members
+            val reminderTitle = "📌 New Reminder from ${currentUser?.name}"
+            NotificationHelper.post(context, reminder.id.hashCode(), reminderTitle, title)
+        }
+    }
+
+    fun deleteReminder(reminder: ReminderItem) {
+        viewModelScope.launch {
+            repository.deleteReminder(reminder.id)
+        }
+    }
+
+    fun markReminderComplete(reminder: ReminderItem) {
+        viewModelScope.launch {
+            repository.markReminderComplete(reminder.id)
+            NotificationHelper.post(context, reminder.id.hashCode() + 1000, "Reminder Completed", "✅ ${reminder.title} marked as done")
+        }
+    }
+
+    fun snoozeReminderNotification(reminder: ReminderItem, snoozeMinutes: Int) {
+        viewModelScope.launch {
+            repository.snoozeReminderNotification(reminder.id, snoozeMinutes)
+            NotificationHelper.post(context, reminder.id.hashCode() + 2000, "Reminder Snoozed", "⏱️ ${reminder.title} snoozed for $snoozeMinutes minutes")
         }
     }
 

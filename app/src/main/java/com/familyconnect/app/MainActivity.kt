@@ -44,9 +44,6 @@ class MainActivity : ComponentActivity() {
         // Auto-start CallListenerService if user is already logged in
         ensureCallListenerServiceRunning()
         
-        // 🔥 Register PhoneAccount for Telecom Framework (system call handling)
-        registerPhoneAccount()
-        
         // Extract and store call data BEFORE rendering UI
         extractAndStorePendingCall(intent)
         
@@ -249,32 +246,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun registerPhoneAccount() {
-        try {
-            Log.d("MainActivity", "🔥 Registering PhoneAccount for Telecom Framework...")
-            
-            val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
-            if (telecomManager == null) {
-                Log.e("MainActivity", "   ❌ TelecomManager not available")
-                return
-            }
-
-            val handle = android.telecom.PhoneAccountHandle(
-                ComponentName(this, com.familyconnect.app.telecom.MyConnectionService::class.java),
-                "FamilyConnectCall"
-            )
-
-            val phoneAccount = android.telecom.PhoneAccount.builder(handle, "Family Connect Calls")
-                .setCapabilities(android.telecom.PhoneAccount.CAPABILITY_CALL_PROVIDER)
-                .build()
-
-            telecomManager.registerPhoneAccount(phoneAccount)
-            Log.d("MainActivity", "   ✅ PhoneAccount registered successfully!")
-        } catch (e: Exception) {
-            Log.e("MainActivity", "   ❌ Error registering PhoneAccount: ${e.message}", e)
-        }
-    }
-
     private fun maybeRequestFullScreenIntentPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {  // Android 12+
             val permission = Manifest.permission.USE_FULL_SCREEN_INTENT
@@ -294,22 +265,7 @@ private fun Root(app: FamilyConnectApp, onViewModelReady: (FamilyViewModel) -> U
     onViewModelReady(viewModel)
     
     Column(modifier = Modifier.fillMaxWidth()) {
-        // 🔥 TEMPORARY TEST BUTTON - Remove after debugging
-        Button(
-            onClick = {
-                Log.d("MainActivity", "🧪 TEST BUTTON: Testing notification...")
-                NotificationHelper.postIncomingCallNotification(
-                    app,
-                    "test_call_123",
-                    "test_thread_456",
-                    "Test User",
-                    "audio"
-                )
-            },
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text("🔥 TEST NOTIFICATION")
-        }
+        // UI content goes here
         
         FamilyConnectRoot(viewModel = viewModel)
     }

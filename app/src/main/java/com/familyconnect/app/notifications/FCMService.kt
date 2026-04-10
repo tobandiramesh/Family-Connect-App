@@ -145,30 +145,11 @@ class FCMService : FirebaseMessagingService() {
 
             Log.d(TAG, "📞 Incoming call from FCM: $callId from $callerName")
             
-            // 🔥 Use Telecom Framework for system-level call handling
+            // � Using CallForegroundService for incoming call handling
             try {
-                val telecomManager = getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
-                if (telecomManager == null) {
-                    Log.e(TAG, "   ❌ TelecomManager not available, falling back to CallForegroundService")
-                    fallbackToCallForegroundService(callId, threadId, callerName, callType)
-                    return
-                }
-
-                val handle = android.telecom.PhoneAccountHandle(
-                    ComponentName(this, com.familyconnect.app.telecom.MyConnectionService::class.java),
-                    "FamilyConnectCall"
-                )
-
-                val extras = Bundle().apply {
-                    putString("callId", callId)
-                    putString("threadId", threadId)
-                    putString("callerName", callerName)
-                    putString("callType", callType)
-                }
-
-                Log.d(TAG, "   🚀 Triggering incoming call via TelecomManager...")
-                telecomManager.addNewIncomingCall(handle, extras)
-                Log.d(TAG, "   ✅ Telecom incoming call triggered")
+                Log.d(TAG, "   📱 Triggering incoming call via CallForegroundService...")
+                fallbackToCallForegroundService(callId, threadId, callerName, callType)
+                return
             } catch (e: Exception) {
                 Log.e(TAG, "   ❌ Error triggering telecom call: ${e.message}", e)
                 fallbackToCallForegroundService(callId, threadId, callerName, callType)
