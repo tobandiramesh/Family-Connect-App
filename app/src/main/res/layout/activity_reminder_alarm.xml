@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#1a1a1a"
+    android:gravity="center"
+    android:padding="32dp">
+
+    <!-- Alarm Icon -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🚨"
+        android:textSize="80sp"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Reminder Title -->
+    <TextView
+        android:id="@+id/reminder_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Reminder"
+        android:textSize="32sp"
+        android:textColor="#FF5252"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Message -->
+    <TextView
+        android:id="@+id/reminder_message"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Tap DISMISS to close or SNOOZE for another 5 minutes"
+        android:textSize="16sp"
+        android:textColor="#FFFFFF"
+        android:gravity="center"
+        android:layout_marginBottom="48dp" />
+
+    <!-- Dismiss Button -->
+    <Button
+        android:id="@+id/btn_dismiss"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:text="DISMISS"
+        android:textSize="18sp"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:background="@drawable/button_dismiss_background"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Snooze Button -->
+    <Button
+        android:id="@+id/btn_snooze"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:text="SNOOZE"
+        android:textSize="18sp"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:background="@drawable/button_snooze_background" />
+
+</LinearLayout>

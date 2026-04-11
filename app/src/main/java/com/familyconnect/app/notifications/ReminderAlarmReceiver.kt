@@ -43,14 +43,40 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
         
         Log.d(TAG, "🔔 Snooze expired for reminder: $reminderId (Title: $reminderTitle, Snooze: $snoozeMinutes mins)")
         
-        // 🔊 Post RECURRING snooze notification (with sound & vibration)
-        postSnoozeExpiredNotification(context, reminderId, reminderTitle)
+        // � LAUNCH FULL-SCREEN ALARM ACTIVITY (Option 2)
+        launchFullScreenAlarmActivity(context, reminderId, reminderTitle, snoozeMinutes)
         
         // 🔄 RESCHEDULE next alarm for another snooze period (recurring snooze)
         rescheduleSnoozeAlarm(context, reminderId, reminderTitle, snoozeMinutes)
         
         // Optionally: Verify reminder still exists in Firebase and is not completed
         verifyReminderStillActive(reminderId)
+    }
+    
+    private fun launchFullScreenAlarmActivity(
+        context: Context,
+        reminderId: String,
+        reminderTitle: String,
+        snoozeMinutes: Int
+    ) {
+        try {
+            Log.d(TAG, "🚨 Launching full-screen alarm activity for: $reminderTitle")
+            
+            val intent = Intent(context, ReminderAlarmActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(ReminderAlarmActivity.EXTRA_REMINDER_ID, reminderId)
+                putExtra(ReminderAlarmActivity.EXTRA_REMINDER_TITLE, reminderTitle)
+                putExtra(ReminderAlarmActivity.EXTRA_SNOOZE_MINUTES, snoozeMinutes)
+            }
+            
+            context.startActivity(intent)
+            Log.d(TAG, "✅ Full-screen alarm activity launched")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error launching alarm activity: ${e.message}", e)
+            // Fallback to notification if activity fails
+            postSnoozeExpiredNotification(context, reminderId, reminderTitle)
+        }
     }
     
     private fun postSnoozeExpiredNotification(context: Context, reminderId: String, reminderTitle: String) {
