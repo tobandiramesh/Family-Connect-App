@@ -159,8 +159,12 @@ class ReminderAlarmActivity : AppCompatActivity() {
 
     private fun scheduleSnoozeAlarm() {
         try {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val nextAlarmTime = System.currentTimeMillis() + (snoozeMinutes * 60 * 1000L)
+            
+            // 🔥 UPDATE FIREBASE so data stays in sync
+            updateReminderInFirebase(nextAlarmTime)
+            
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
             val intent = Intent(this, ReminderAlarmReceiver::class.java).apply {
                 action = ReminderAlarmReceiver.ACTION_SNOOZE_EXPIRED
@@ -169,30 +173,66 @@ class ReminderAlarmActivity : AppCompatActivity() {
                 putExtra(ReminderAlarmReceiver.EXTRA_SNOOZE_MINUTES, snoozeMinutes)
             }
 
+            // 🔑 Use unique request code to prevent conflicts
+            val uniqueRequestCode = (reminderId?.hashCode() ?: 0) + (nextAlarmTime % 100000).toInt()
+
             val pendingIntent = PendingIntent.getBroadcast(
                 this,
-                reminderId?.hashCode() ?: 0,
+                uniqueRequestCode,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
+            var alarmScheduled = false
+            
             try {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    nextAlarmTime,
-                    pendingIntent
-                )
-            } catch (e: Exception) {
                 alarmManager.setAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     nextAlarmTime,
                     pendingIntent
                 )
+                Log.d(TAG, "✅ setAndAllowWhileIdle SUCCESS")
+                alarmScheduled = true
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ setAndAllowWhileIdle failed: ${e.message}")
             }
-
-            Log.d(TAG, "✅ Snooze alarm scheduled for ${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date(nextAlarmTime))}")
+            
+            if (alarmScheduled) {
+                try {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        nextAlarmTime,
+                        pendingIntent
+                    )
+                    Log.d(TAG, "✅ setExactAndAllowWhileIdle SUCCESS (backup)")
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ setExactAndAllowWhileIdle not available: ${e.message}")
+                }
+            } else {
+                Log.e(TAG, "❌ Both alarm methods failed!")
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Error scheduling snooze: ${e.message}", e)
+            Log.e(TAG, "❌ Error scheduling snooze alarm: ${e.message}", e)
+        }
+    }
+    
+    private fun updateReminderInFirebase(nextAlarmTime: Long) {
+        try {
+            Log.d(TAG, "🔥 Updating Firebase reminder snooze from activity")
+            
+            val database = com.google.firebase.database.FirebaseDatabase.getInstance(
+                "https://family-connect-app-a219b-default-rtdb.asia-southeast1.firebasedatabase.app"
+            )
+            val reminderRef = database.getReference("reminders/$reminderId")
+            
+            reminderRef.child("lastSnoozedUntil").setValue(nextAlarmTime).addOnSuccessListener {
+                Log.d(TAG, "✅ Updated lastSnoozedUntil in Firebase from activity")
+            }
+            reminderRef.child("nextNotificationTime").setValue(nextAlarmTime).addOnSuccessListener {
+                Log.d(TAG, "✅ Updated nextNotificationTime in Firebase from activity")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error updating Firebase: ${e.message}", e)
         }
     }
 

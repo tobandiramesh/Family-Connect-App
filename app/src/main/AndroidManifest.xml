@@ -111,7 +111,7 @@
         <!-- Broadcast receiver for reminder snooze timer expiration -->
         <receiver
             android:name=".notifications.ReminderAlarmReceiver"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="com.familyconnect.app.SNOOZE_EXPIRED" />
             </intent-filter>

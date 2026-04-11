@@ -2636,26 +2636,27 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .padding(8.dp)
+                                    .clickable(enabled = true, onClick = {
                                         if (user.mobile in assignedTo) {
                                             assignedTo.remove(user.mobile)
                                         } else {
                                             assignedTo.add(user.mobile)
                                         }
-                                    }
-                                    .padding(8.dp)
+                                    })
                             ) {
                                 androidx.compose.material3.Checkbox(
                                     checked = user.mobile in assignedTo,
-                                    onCheckedChange = {
-                                        if (it) {
+                                    onCheckedChange = { isChecked ->
+                                        if (isChecked) {
                                             assignedTo.add(user.mobile)
                                         } else {
                                             assignedTo.remove(user.mobile)
                                         }
-                                    }
+                                    },
+                                    modifier = Modifier.size(24.dp)  // Explicit size for better hit target
                                 )
-                                Column {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(user.name, fontWeight = FontWeight.Bold)
                                     Text(user.mobile, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }

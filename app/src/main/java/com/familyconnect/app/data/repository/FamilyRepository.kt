@@ -755,23 +755,47 @@ class FamilyRepository(
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
             )
             
-            // Schedule exact alarm
+            // Schedule alarm - BOTH methods for maximum reliability
+            Log.d("FamilyRepository", "═══════════════════════════════════════════════════════")
+            Log.d("FamilyRepository", "⏰ SCHEDULING ALARM")
+            Log.d("FamilyRepository", "   Title: $reminderTitle")
+            Log.d("FamilyRepository", "   Scheduled for: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date(triggerAtMillis))}")
+            Log.d("FamilyRepository", "   Request Code: ${reminderId.hashCode()}")
+            
+            var alarmScheduled = false
+            
+            // Try setAndAllowWhileIdle FIRST (more reliable when app closed)
             try {
-                alarmManager.setExactAndAllowWhileIdle(
-                    android.app.AlarmManager.RTC_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
-                Log.d("FamilyRepository", "⏰ Alarm scheduled for reminder '$reminderTitle' at ${java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date(triggerAtMillis))}")
-            } catch (e: Exception) {
-                // Fallback: setAndAllowWhileIdle if setExactAndAllowWhileIdle fails
-                Log.w("FamilyRepository", "⚠️ setExactAndAllowWhileIdle failed, using setAndAllowWhileIdle: ${e.message}")
                 alarmManager.setAndAllowWhileIdle(
                     android.app.AlarmManager.RTC_WAKEUP,
                     triggerAtMillis,
                     pendingIntent
                 )
+                Log.d("FamilyRepository", "✅ setAndAllowWhileIdle SUCCESS (PRIMARY)")
+                alarmScheduled = true
+            } catch (e: Exception) {
+                Log.w("FamilyRepository", "⚠️ setAndAllowWhileIdle failed: ${e.message}")
             }
+            
+            // Also try setExactAndAllowWhileIdle for precision
+            if (alarmScheduled) {
+                try {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        android.app.AlarmManager.RTC_WAKEUP,
+                        triggerAtMillis,
+                        pendingIntent
+                    )
+                    Log.d("FamilyRepository", "✅ setExactAndAllowWhileIdle SUCCESS (BACKUP)")
+                } catch (e: Exception) {
+                    Log.w("FamilyRepository", "⚠️ setExactAndAllowWhileIdle not available: ${e.message}")
+                }
+            }
+            
+            if (!alarmScheduled) {
+                Log.e("FamilyRepository", "❌ BOTH alarm methods FAILED!")
+                throw Exception("Failed to schedule alarm with any method")
+            }
+            Log.d("FamilyRepository", "═══════════════════════════════════════════════════════")
         } catch (e: Exception) {
             Log.e("FamilyRepository", "❌ Error scheduling alarm: ${e.message}", e)
         }
