@@ -308,7 +308,8 @@ class CallListenerService : Service() {
                                 context = this@CallListenerService,
                                 id = threadId.hashCode(),
                                 senderName = otherName,
-                                messageBody = body
+                                messageBody = body,
+                                threadId = threadId
                             )
                         }
                     }

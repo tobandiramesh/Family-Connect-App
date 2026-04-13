@@ -121,10 +121,20 @@ object NotificationHelper {
         }
     }
 
-    fun postMessageNotification(context: Context, id: Int, senderName: String, messageBody: String) {
-        // ✅ SIMPLE: Direct intent to MainActivity
+    fun postMessageNotification(
+        context: Context,
+        id: Int,
+        senderName: String,
+        messageBody: String,
+        threadId: String
+    ) {
+        // ✅ Pass threadId + notification flag in intent
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("fromNotification", true)
+            putExtra(EXTRA_THREAD_ID, threadId)
+            putExtra("senderName", senderName)
+            putExtra("messageBody", messageBody)
         }
         
         val pendingIntent = PendingIntent.getActivity(

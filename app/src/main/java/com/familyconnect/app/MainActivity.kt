@@ -66,6 +66,9 @@ class MainActivity : ComponentActivity() {
                     
                     // Now process the pending call with the ready ViewModel
                     processPendingCall(vm)
+                    
+                    // 📩 Handle notification tap navigation
+                    handleNotificationNavigation(intent)
                 }
             }
         }
@@ -91,6 +94,26 @@ class MainActivity : ComponentActivity() {
         
         val app = application as FamilyConnectApp
         app.setPendingCall(PendingCallIntent(callId, threadId, callerName ?: "User", callType))
+    }
+    
+    private fun handleNotificationNavigation(intent: Intent?) {
+        val fromNotification = intent?.getBooleanExtra("fromNotification", false) ?: false
+        
+        if (fromNotification) {
+            val threadId = intent?.getStringExtra(NotificationHelper.EXTRA_THREAD_ID)
+            val senderName = intent?.getStringExtra("senderName")
+            
+            Log.d("MainActivity", "📩 Opened from message notification")
+            Log.d("MainActivity", "   threadId=$threadId")
+            Log.d("MainActivity", "   senderName=$senderName")
+            
+            if (!threadId.isNullOrBlank() && viewModelInstance != null) {
+                viewModelInstance?.openChatByThreadId(threadId)
+                Log.d("MainActivity", "✅ Navigating to chat: $threadId")
+            } else {
+                Log.w("MainActivity", "⚠️ Missing threadId or ViewModel not ready")
+            }
+        }
     }
     
     private fun processPendingCall(viewModel: FamilyViewModel) {
@@ -153,6 +176,8 @@ class MainActivity : ComponentActivity() {
         val vm = viewModelInstance
         if (vm != null) {
             processPendingCall(vm)
+            // 📩 Handle notification tap navigation
+            handleNotificationNavigation(intent)
         } else {
             Log.d("MainActivity", "⚠️ ViewModel not ready, will process in LaunchedEffect")
         }

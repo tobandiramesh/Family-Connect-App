@@ -466,11 +466,12 @@ class FamilyViewModel(
                 // Post notification for new messages from other users
                 for (message in addedMessages) {
                     if (message.senderMobile != currentUser?.mobile) {
-                        NotificationHelper.post(
-                            context,
-                            message.messageId.hashCode(),
-                            "Message from ${message.senderName}",
-                            message.body.take(100)
+                        NotificationHelper.postMessageNotification(
+                            context = context,
+                            id = message.messageId.hashCode(),
+                            senderName = message.senderName,
+                            messageBody = message.body.take(100),
+                            threadId = thread.threadId
                         )
                     }
                 }
@@ -520,6 +521,35 @@ class FamilyViewModel(
                         )
                         selectChatThread(manualThread)
                     }
+                }
+            }
+        }
+    }
+
+    fun openChatByThreadId(threadId: String?) {
+        if (threadId.isNullOrBlank()) {
+            Log.w("FamilyViewModel", "❌ openChatByThreadId called with null/blank threadId")
+            return
+        }
+        
+        Log.d("FamilyViewModel", "📩 openChatByThreadId($threadId)")
+        
+        // Try to find in current threads
+        val chatThread = userChatThreads.value.find { it.threadId == threadId }
+        if (chatThread != null) {
+            selectChatThread(chatThread)
+            Log.d("FamilyViewModel", "✅ Found thread in cache and selected: $threadId")
+        } else {
+            Log.w("FamilyViewModel", "⚠️ Could not find thread for threadId: $threadId in userChatThreads")
+            // The thread should exist in userChatThreads, if not, wait a bit and try again
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(500)
+                val foundThread = userChatThreads.value.find { it.threadId == threadId }
+                if (foundThread != null) {
+                    selectChatThread(foundThread)
+                    Log.d("FamilyViewModel", "✅ Found thread after delay and selected: $threadId")
+                } else {
+                    Log.w("FamilyViewModel", "❌ Still could not find thread after delay: $threadId")
                 }
             }
         }
