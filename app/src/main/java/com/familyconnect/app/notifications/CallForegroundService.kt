@@ -1,13 +1,21 @@
 package com.familyconnect.app.notifications
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.Person
 import android.app.PendingIntent
 import com.familyconnect.app.MainActivity
+import com.familyconnect.app.activities.IncomingCallActivity
 
 class CallForegroundService : Service() {
     
@@ -29,7 +37,9 @@ class CallForegroundService : Service() {
             Log.e(TAG, "   ❌ Error: ${e.message}", e)
         }
 
-        return START_NOT_STICKY
+        // 🔥 CRITICAL: Use START_STICKY to keep service alive
+        // Service should stay alive for notification + action button handling
+        return START_STICKY
     }
 
     private fun triggerIncomingCall(
@@ -40,121 +50,152 @@ class CallForegroundService : Service() {
     ) {
         Log.d(TAG, "   🔥 triggerIncomingCall() starting...")
         
-        // 🔥 CRITICAL FIX: Strong PendingIntent configuration targeting MainActivity (NOT IncomingCallActivity)
-        // This reuses the proven working flow that already handles call intents
-        val callIntent = Intent(this, MainActivity::class.java).apply {
-            action = "INCOMING_CALL"
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+        // 🔥 ABSOLUTELY CRITICAL: Create channel RIGHT HERE in SERVICE context
+        // Before this: channel was in Application class (different context/lifecycle)
+        // This caused Android to ignore it and use fallback "Other" channel
+        // NOW: channel is created in SAME context as notification → Android registers it
+        Log.d(TAG, "   🔧 Creating call notification channel in SERVICE context...")
+        ensureCallChannelInService()
+        Log.d(TAG, "   ✅ Channel created in service context")
+        
+        val notificationId = Math.abs(callId.hashCode())
+        Log.d(TAG, "   🔑 Notification ID: $notificationId")
+        
+        // 🔥 CRITICAL CHECK: Verify FullScreenIntent permission is granted
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val canUseFullScreen = notificationManager.canUseFullScreenIntent()
+        Log.d(TAG, "   🔐 FullScreenIntent permission granted: $canUseFullScreen")
+        
+        if (!canUseFullScreen) {
+            Log.e(TAG, "   ❌ FullScreenIntent permission NOT granted - opening settings...")
+            
+            try {
+                val settingsIntent = Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+                    data = android.net.Uri.parse("package:$packageName")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                startActivity(settingsIntent)
+                Log.d(TAG, "   ✅ Opened settings for full screen intent permission")
+            } catch (e: Exception) {
+                Log.e(TAG, "   ⚠️ Could not open settings: ${e.message}")
+            }
+        }
+        
+        // 🔥 DEBUG: Check actual channel importance
+        val callChannel = notificationManager.getNotificationChannel(NotificationHelper.CHANNEL_CALLS)
+        val importance = callChannel?.importance ?: -1
+        val importanceLabel = when (importance) {
+            NotificationManager.IMPORTANCE_NONE -> "NONE (0)"
+            NotificationManager.IMPORTANCE_MIN -> "MIN (1)"
+            NotificationManager.IMPORTANCE_LOW -> "LOW (2)"
+            NotificationManager.IMPORTANCE_DEFAULT -> "DEFAULT (3)"
+            NotificationManager.IMPORTANCE_HIGH -> "HIGH (4)"
+            NotificationManager.IMPORTANCE_MAX -> "MAX (5)"
+            else -> "UNKNOWN ($importance)"
+        }
+        Log.d(TAG, "   📊 CHANNEL_CALLS importance: $importanceLabel")
+        
+        // 🔥 CRITICAL: Create PendingIntent for IncomingCallActivity
+        Log.d(TAG, "   ✅ Creating FullScreenIntent for IncomingCallActivity...")
+        val callActivityIntent = Intent(this, IncomingCallActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra(NotificationHelper.EXTRA_CALL_ID, callId)
             putExtra(NotificationHelper.EXTRA_THREAD_ID, threadId)
             putExtra(NotificationHelper.EXTRA_CALLER_NAME, callerName)
             putExtra(NotificationHelper.EXTRA_CALL_TYPE, callType)
         }
-
-        // 🔥 CRITICAL: Use UNIQUE request code per call (based on callId) - NOT hardcoded
-        // This prevents PendingIntent collisions when multiple calls arrive quickly
-        val requestCode = Math.abs(callId.hashCode())
-        Log.d(TAG, "   🔑 Request code: $requestCode (from callId: $callId)")
         
-        val pendingIntent = PendingIntent.getActivity(
+        val fullScreenPendingIntent = PendingIntent.getActivity(
             this,
-            requestCode,
-            callIntent,
+            Math.abs(callId.hashCode()),
+            callActivityIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-
-        // 🔥 ACCEPT ACTION
-        val acceptIntent = Intent(this, CallActionReceiver::class.java).apply {
-            action = NotificationHelper.ACTION_ACCEPT_CALL
-            putExtra(NotificationHelper.EXTRA_CALL_ID, callId)
-            putExtra(NotificationHelper.EXTRA_THREAD_ID, threadId)
-            putExtra(NotificationHelper.EXTRA_CALLER_NAME, callerName)
-        }
-
-        val acceptPendingIntent = PendingIntent.getBroadcast(
-            this,
-            callId.hashCode(),
-            acceptIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        // 🔥 REJECT ACTION
-        val rejectIntent = Intent(this, CallActionReceiver::class.java).apply {
-            action = NotificationHelper.ACTION_REJECT_CALL
-            putExtra(NotificationHelper.EXTRA_CALL_ID, callId)
-            putExtra(NotificationHelper.EXTRA_THREAD_ID, threadId)
-        }
-
-        val rejectPendingIntent = PendingIntent.getBroadcast(
-            this,
-            callId.hashCode() + 1,
-            rejectIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        // 🔥 STEP 1: Create MINIMAL foreground notification FIRST
-        Log.d(TAG, "   ✅ STEP 1: Creating minimal foreground notification...")
-        val tempNotification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
+        
+        // 🔥 STEP 1: Build notification with FullScreenIntent
+        // This is the ONLY way Android allows Activity launch from background service
+        Log.d(TAG, "   ✅ Building call notification with FullScreenIntent...")
+        val callNotification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setContentTitle("Incoming Call")
-            .setContentText("Connecting...")
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-
-        // 🔥 STEP 2: Start foreground BEFORE full-screen notification
-        Log.d(TAG, "   ✅ STEP 2: Starting foreground service...")
-        startForeground(NotificationHelper.CALL_NOTIFICATION_ID, tempNotification)
-        Log.d(TAG, "   ✅ STEP 2: Foreground service started")
-
-        // 🔥 STEP 3: NOW build FULL-SCREEN notification (after foreground established)
-        Log.d(TAG, "   ✅ STEP 3: Building full-screen notification...")
-        val notificationId = Math.abs(callId.hashCode())
-        val fullScreenNotification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
-            .setSmallIcon(android.R.drawable.ic_menu_call)
-            .setContentTitle("📞 Incoming Call")
             .setContentText("$callerName is calling...")
-            .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
+            
+            .setPriority(NotificationCompat.PRIORITY_MAX) // 🔥 MUST be MAX for heads-up/full-screen on Android 13+
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setFullScreenIntent(pendingIntent, true)
-            
-            // 🔥 ACTION BUTTONS
-            .addAction(android.R.drawable.ic_menu_call, "Accept", acceptPendingIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Reject", rejectPendingIntent)
-            
             .setOngoing(true)
-            .setAutoCancel(false)
+            .setAutoCancel(false) // 🔥 Prevent accidental dismissal
+            
+            // 🔥 ANDROID 12+ CRITICAL: THIS is the only allowed way to launch Activity
+            // Service → startActivity() = BLOCKED ❌
+            // Notification → setFullScreenIntent() = ALLOWED ✅
+            .setFullScreenIntent(fullScreenPendingIntent, true)
+            
+            // 🔥 FALLBACK: For unlocked phone or notification tap
+            // When phone is unlocked, FullScreenIntent may not fire
+            // This ensures UI still launches if user taps notification
+            .setContentIntent(fullScreenPendingIntent)
+            
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE))
             .setVibrate(longArrayOf(0, 500, 300, 500))
             .build()
-
-        // 🔥 STEP 4: Update notification (now with full-screen intent and action buttons)
-        // ✅ Use UNIQUE notification ID per call to avoid collisions
-        Log.d(TAG, "   ✅ STEP 4: Updating notification with full-screen intent and action buttons...")
-        val manager = NotificationManagerCompat.from(this)
-        manager.notify(notificationId, fullScreenNotification)
-        Log.d(TAG, "   ✅ STEP 4: Notification updated (ID: $notificationId)")
-
-        // 🔥 STEP 5: Android will launch activity via PendingIntent (NOT via startActivity)
-        // ❌ REMOVED: startActivity(intent) - this is BLOCKED when app is backgrounded
-        // ✅ TRUSTING: PendingIntent in notification to launch MainActivity with call data
-        // MainActivity.extractAndStorePendingCall() will handle the incoming call properly
-        Log.d(TAG, "   ✅ STEP 5: Notification with PendingIntent ready (Android will launch MainActivity)")
         
-        Log.d(TAG, "   ✅✅✅ INCOMING CALL NOTIFICATION POSTED SUCCESSFULLY ✅✅✅")
+        // 🔥 CRITICAL: Acquire WakeLock to ensure screen wakes up
+        Log.d(TAG, "   🧪 Acquiring WakeLock to wake screen...")
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = pm.newWakeLock(
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            "app:call_wake"
+        )
+        wakeLock.acquire(3000) // 3 second timeout
+        Log.d(TAG, "   ✅ WakeLock acquired")
         
-        // ✅ DO NOT stop service immediately
-        // Notification lifecycle requires foreground service to stay alive
-        // Service will be stopped when:
-        // - User accepts/rejects call
-        // - User closes notification
-        // - Call is cancelled remotely
-        Log.d(TAG, "   📌 Service remaining active to maintain notification stability")
+        // 🔥 STEP 2: Start foreground with complete notification
+        // FullScreenIntent in notification will launch IncomingCallActivity
+        Log.d(TAG, "   ✅ Starting foreground service with call notification...")
+        startForeground(notificationId, callNotification)
+        Log.d(TAG, "   ✅ Foreground service started")
+        Log.d(TAG, "   ✅ Notification will trigger FullScreenIntent → IncomingCallActivity")
+        
+        Log.d(TAG, "   ✅✅✅ INCOMING CALL NOTIFICATION POSTED - ACTIVITY WILL LAUNCH VIA FULLSCREENINTENT ✅✅✅")
+        
+        // ✅ Service stays alive to maintain notification
+        // When FullScreenIntent triggers, IncomingCallActivity will open
+        Log.d(TAG, "   📌 Service remaining active for call lifecycle")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+    
+    // 🔥 CRITICAL: Create call channel in SERVICE context (not Application)
+    // This ensures Android properly registers the channel before notification is posted
+    // Context mismatch causes Android to fallback to "Other" channel
+    private fun ensureCallChannelInService() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            
+            val callChannel = NotificationChannel(
+                NotificationHelper.CHANNEL_CALLS,
+                "Incoming Calls",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Incoming call alerts"
+                setSound(
+                    android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE),
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                enableVibration(true)
+                enableLights(true)
+                setBypassDnd(true)
+                vibrationPattern = longArrayOf(0, 1000, 500, 1000, 500, 1000)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            }
+            
+            manager.createNotificationChannel(callChannel)
+            Log.d(TAG, "✅ Call channel created in SERVICE context: ${NotificationHelper.CHANNEL_CALLS}")
+        }
+    }
 }

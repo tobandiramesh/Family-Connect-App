@@ -33,6 +33,12 @@ import android.content.ComponentName
 import android.content.Context
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
+import android.os.Handler
+import android.os.Looper
+import android.app.PendingIntent
+import android.app.NotificationManager
+import androidx.core.app.NotificationCompat
+import android.os.PowerManager
 
 class MainActivity : ComponentActivity() {
     private var viewModelInstance: FamilyViewModel? = null
@@ -61,7 +67,7 @@ class MainActivity : ComponentActivity() {
         
         setContent {
             FamilyConnectTheme {
-                Root(app = app) { vm ->
+                Root(app = app, mainActivity = this) { vm ->
                     viewModelInstance = vm
                     
                     // Now process the pending call with the ready ViewModel
@@ -282,16 +288,86 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    
+    // 🧪 TEST FUNCTION: Trigger a test incoming call with 5-second delay
+    fun triggerTestCallWithDelay() {
+        Log.d("MainActivity", "🧪 Test: Scheduling call notification in 5 seconds...")
+        
+        Handler(Looper.getMainLooper()).postDelayed({
+            Log.d("MainActivity", "🧪 Test: 5 seconds elapsed, triggering test call notification...")
+            
+            val intent = Intent(this, com.familyconnect.app.activities.IncomingCallActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(NotificationHelper.EXTRA_CALLER_NAME, "🧪 Test Caller")
+                putExtra(NotificationHelper.EXTRA_CALL_ID, "test_call_${System.currentTimeMillis()}")
+                putExtra(NotificationHelper.EXTRA_THREAD_ID, "test_thread")
+                putExtra(NotificationHelper.EXTRA_CALL_TYPE, "audio")
+            }
+            
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                1001,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            
+            val notification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
+                .setSmallIcon(android.R.drawable.ic_menu_call)
+                .setContentTitle("🧪 TEST Incoming Call")
+                .setContentText("Test Caller is calling...")
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setFullScreenIntent(pendingIntent, true)
+                
+                // 🔥 FALLBACK: For unlocked phone or notification tap
+                .setContentIntent(pendingIntent)
+                
+                // 🔥 CRITICAL: Foreground service behavior for Android 12+
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+                
+                .setAutoCancel(false)
+                .setOngoing(true)
+                .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE))
+                .setVibrate(longArrayOf(0, 500, 300, 500))
+                .build()
+            
+            // 🔥 CRITICAL: Acquire WakeLock to ensure screen wakes up
+            Log.d("MainActivity", "🧪 Test: Acquiring WakeLock to wake screen...")
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val wakeLock = pm.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "app:call_wake_test"
+            )
+            wakeLock.acquire(3000) // 3 second timeout
+            Log.d("MainActivity", "✅ Test: WakeLock acquired")
+            
+            // Post notification with FullScreenIntent
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(999, notification)
+            
+            Log.d("MainActivity", "✅ Test: Notification posted with FullScreenIntent!")
+        }, 5000) // 5 second delay
+    }
 }
 
 @Composable
-private fun Root(app: FamilyConnectApp, onViewModelReady: (FamilyViewModel) -> Unit = {}) {
+private fun Root(app: FamilyConnectApp, mainActivity: MainActivity, onViewModelReady: (FamilyViewModel) -> Unit = {}) {
     val viewModel: FamilyViewModel = viewModel(factory = FamilyViewModelFactory(app.repository, app))
     onViewModelReady(viewModel)
     
     Column(modifier = Modifier.fillMaxWidth()) {
-        // UI content goes here
+        // 🧪 TEST BUTTON: Trigger test incoming call
+        Button(
+            onClick = { mainActivity.triggerTestCallWithDelay() },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Text("🧪 Test Incoming Call (5 sec delay)")
+        }
         
+        // UI content goes here
         FamilyConnectRoot(viewModel = viewModel)
     }
 }

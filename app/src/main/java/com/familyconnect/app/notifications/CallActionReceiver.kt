@@ -13,39 +13,36 @@ class CallActionReceiver : BroadcastReceiver() {
         val threadId = intent.getStringExtra(NotificationHelper.EXTRA_THREAD_ID) ?: return
 
         when (intent.action) {
-            NotificationHelper.ACTION_ACCEPT_CALL -> {
-                Log.d("CallActionReceiver", "✅ ACCEPT button tapped for call=$callId")
-                val callerName = intent.getStringExtra(NotificationHelper.EXTRA_CALLER_NAME) ?: ""
-                
-                NotificationHelper.cancelCallNotification(context, callId)
-                
-                FirebaseService.updateCallStatus(threadId, callId, "accepted") { success ->
-                    Log.d("CallActionReceiver", "Firebase updated: success=$success")
-                }
-
-                // Launch the app
-                val launchIntent = Intent(context, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    putExtra(NotificationHelper.EXTRA_CALL_ID, callId)
-                    putExtra(NotificationHelper.EXTRA_THREAD_ID, threadId)
-                    putExtra(NotificationHelper.EXTRA_CALLER_NAME, callerName)
-                    putExtra("action", "accept_call")
-                }
-                
-                try {
-                    context.startActivity(launchIntent)
-                    Log.d("CallActionReceiver", "✅ MainActivity launched")
-                } catch (e: Exception) {
-                    Log.e("CallActionReceiver", "❌ Error launching activity: ${e.message}")
-                }
-            }
-
             NotificationHelper.ACTION_REJECT_CALL -> {
                 Log.d("CallActionReceiver", "❌ REJECT button tapped for call=$callId")
                 NotificationHelper.cancelCallNotification(context, callId)
 
                 FirebaseService.updateCallStatus(threadId, callId, "rejected") { success ->
                     Log.d("CallActionReceiver", "Firebase updated: success=$success")
+                }
+                
+                // 🔥 Stop the foreground service after reject
+                try {
+                    context.stopService(Intent(context, CallForegroundService::class.java))
+                    Log.d("CallActionReceiver", "✅ CallForegroundService stopped")
+                } catch (e: Exception) {
+                    Log.e("CallActionReceiver", "❌ Error stopping service: ${e.message}")
+                }
+                
+                // 🔥 RESTART the listener service after call ends
+                // Get user mobile from SharedPreferences
+                try {
+                    val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                    val userMobile = prefs.getString("user_mobile", "") ?: ""
+                    if (userMobile.isNotEmpty()) {
+                        Log.d("CallActionReceiver", "🔄 Restarting CallListenerService for: $userMobile")
+                        CallListenerService.start(context, userMobile, "")
+                        Log.d("CallActionReceiver", "✅ CallListenerService restarted")
+                    } else {
+                        Log.w("CallActionReceiver", "⚠️ No user mobile found to restart service")
+                    }
+                } catch (e: Exception) {
+                    Log.e("CallActionReceiver", "❌ Error restarting listener: ${e.message}")
                 }
             }
         }

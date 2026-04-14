@@ -90,13 +90,13 @@
 
         <!-- Dedicated incoming call activity for showing full call UI immediately -->
         <activity
-            android:name=".IncomingCallActivity"
+            android:name=".activities.IncomingCallActivity"
             android:exported="true"
-            android:launchMode="singleTask"
             android:showOnLockScreen="true"
             android:turnScreenOn="true"
-            android:windowSoftInputMode="adjustResize"
-            android:keepScreenOn="true" />
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:taskAffinity="" />
 
         <!-- Full-screen alarm activity for reminder notifications -->
         <activity

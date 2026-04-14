@@ -32,6 +32,8 @@ object NotificationHelper {
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(NotificationManager::class.java)
+            
+            Log.d("NotificationHelper", "🔧 Creating notification channels...")
 
             // General updates channel
             val channel = NotificationChannel(
@@ -41,14 +43,15 @@ object NotificationHelper {
             )
             channel.description = "Event, task, and message reminders"
             manager.createNotificationChannel(channel)
+            Log.d("NotificationHelper", "✅ Created: Family Updates (IMPORTANCE_DEFAULT)")
 
-            // Incoming calls channel (MAX priority with ringtone)
+            // Incoming calls channel (HIGH priority with ringtone)
             val callChannel = NotificationChannel(
                 CHANNEL_CALLS,
                 "Incoming Calls",
-                NotificationManager.IMPORTANCE_MAX
+                NotificationManager.IMPORTANCE_HIGH  // 🔥 MUST be HIGH (not MAX)
             ).apply {
-                description = "Audio and video call notifications"
+                description = "Incoming call alerts"
                 setSound(
                     RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
                     AudioAttributes.Builder()
@@ -63,6 +66,7 @@ object NotificationHelper {
                 lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             }
             manager.createNotificationChannel(callChannel)
+            Log.d("NotificationHelper", "✅ Created: Incoming Calls (IMPORTANCE_HIGH) - ID: $CHANNEL_CALLS")
 
             // Chat messages channel
             val msgChannel = NotificationChannel(
@@ -258,7 +262,9 @@ object NotificationHelper {
     */
 
     fun cancelCallNotification(context: Context, callId: String) {
-        val notificationId = callId.hashCode().let { if (it < 0) -it else it }
+        // 🔥 CRITICAL: Use SAME notification ID calculation as CallForegroundService
+        // Must match: val notificationId = Math.abs(callId.hashCode())
+        val notificationId = Math.abs(callId.hashCode())
         NotificationManagerCompat.from(context).cancel(notificationId)
     }
 }
