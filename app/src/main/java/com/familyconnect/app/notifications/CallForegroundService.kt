@@ -7,7 +7,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import android.app.PendingIntent
-import com.familyconnect.app.IncomingCallActivity
+import com.familyconnect.app.MainActivity
 
 class CallForegroundService : Service() {
     
@@ -40,8 +40,9 @@ class CallForegroundService : Service() {
     ) {
         Log.d(TAG, "   🔥 triggerIncomingCall() starting...")
         
-        // 🔥 CRITICAL FIX: Strong PendingIntent configuration for background launches
-        val fullScreenIntent = Intent(this, IncomingCallActivity::class.java).apply {
+        // 🔥 CRITICAL FIX: Strong PendingIntent configuration targeting MainActivity (NOT IncomingCallActivity)
+        // This reuses the proven working flow that already handles call intents
+        val callIntent = Intent(this, MainActivity::class.java).apply {
             action = "INCOMING_CALL"
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -52,11 +53,15 @@ class CallForegroundService : Service() {
             putExtra(NotificationHelper.EXTRA_CALL_TYPE, callType)
         }
 
-        // 🔥 CRITICAL: Fixed request code (1001) - NOT 0 - ensures stable PendingIntent
+        // 🔥 CRITICAL: Use UNIQUE request code per call (based on callId) - NOT hardcoded
+        // This prevents PendingIntent collisions when multiple calls arrive quickly
+        val requestCode = Math.abs(callId.hashCode())
+        Log.d(TAG, "   🔑 Request code: $requestCode (from callId: $callId)")
+        
         val pendingIntent = PendingIntent.getActivity(
             this,
-            1001,
-            fullScreenIntent,
+            requestCode,
+            callIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -87,33 +92,34 @@ class CallForegroundService : Service() {
             .setFullScreenIntent(pendingIntent, true)
             .setOngoing(true)
             .setAutoCancel(false)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE))
             .setVibrate(longArrayOf(0, 500, 300, 500))
             .build()
 
         // 🔥 STEP 4: Update notification (now with full-screen intent)
+        // ✅ Use UNIQUE notification ID per call to avoid collisions
         Log.d(TAG, "   ✅ STEP 4: Updating notification with full-screen intent...")
+        val notificationId = Math.abs(callId.hashCode())
         val manager = NotificationManagerCompat.from(this)
-        manager.notify(NotificationHelper.CALL_NOTIFICATION_ID, fullScreenNotification)
-        Log.d(TAG, "   ✅ STEP 4: Notification updated")
+        manager.notify(notificationId, fullScreenNotification)
+        Log.d(TAG, "   ✅ STEP 4: Notification updated (ID: $notificationId)")
 
         // 🔥 STEP 5: Android will launch activity via PendingIntent (NOT via startActivity)
         // ❌ REMOVED: startActivity(intent) - this is BLOCKED when app is backgrounded
-        // ✅ TRUSTING: PendingIntent in notification to launch IncomingCallActivity
-        Log.d(TAG, "   ✅ STEP 5: Notification with PendingIntent ready (Android will launch activity)")
+        // ✅ TRUSTING: PendingIntent in notification to launch MainActivity with call data
+        // MainActivity.extractAndStorePendingCall() will handle the incoming call properly
+        Log.d(TAG, "   ✅ STEP 5: Notification with PendingIntent ready (Android will launch MainActivity)")
         
         Log.d(TAG, "   ✅✅✅ INCOMING CALL NOTIFICATION POSTED SUCCESSFULLY ✅✅✅")
         
-        // Stop service after a delay
-        Thread {
-            try {
-                Thread.sleep(1500)
-                stopSelf()
-                Log.d(TAG, "   🛑 Service stopped")
-            } catch (e: Exception) {
-                Log.e(TAG, "   ⚠️ Error stopping service: ${e.message}")
-            }
-        }.start()
+        // ✅ DO NOT stop service immediately
+        // Notification lifecycle requires foreground service to stay alive
+        // Service will be stopped when:
+        // - User accepts/rejects call
+        // - Call times out
+        // - User closes notification
+        Log.d(TAG, "   📌 Service remaining active to maintain notification stability")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

@@ -94,6 +94,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Checkbox
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
@@ -2592,80 +2596,106 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth(0.95f)
+                    .heightIn(max = 600.dp)
                     .background(MaterialTheme.colorScheme.background),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier
-                        .padding(24.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("📌 Create New Reminder", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    
-                    OutlinedTextField(
-                        value = reminderTitle,
-                        onValueChange = { reminderTitle = it },
-                        label = { Text("Reminder Title") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    
-                    OutlinedTextField(
-                        value = reminderDetails,
-                        onValueChange = { reminderDetails = it },
-                        label = { Text("Details") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(120.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        maxLines = 4
-                    )
-                    
-                    Text("Assign to family members:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    // 🎨 HEADER SECTION - Non-scrollable
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        Text("📌 Create New Reminder", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        
+                        OutlinedTextField(
+                            value = reminderTitle,
+                            onValueChange = { reminderTitle = it },
+                            label = { Text("Reminder Title") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+                        
+                        OutlinedTextField(
+                            value = reminderDetails,
+                            onValueChange = { reminderDetails = it },
+                            label = { Text("Details") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(100.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            maxLines = 3
+                        )
+                    }
+                    
+                    // 🎨 DIVIDER
+                    Divider()
+                    
+                    // 🎨 SCROLLABLE MEMBERS SECTION
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 24.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("Assign to family members:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        
+                        // 🔧 MEMBER CHIPS - Direct checkbox only, no nested clickables
                         allowedUsers.forEach { user ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(8.dp)
-                                    .clickable(enabled = true, onClick = {
-                                        if (user.mobile in assignedTo) {
-                                            assignedTo.remove(user.mobile)
-                                        } else {
-                                            assignedTo.add(user.mobile)
-                                        }
-                                    })
-                            ) {
-                                androidx.compose.material3.Checkbox(
-                                    checked = user.mobile in assignedTo,
-                                    onCheckedChange = { isChecked ->
-                                        if (isChecked) {
-                                            assignedTo.add(user.mobile)
-                                        } else {
-                                            assignedTo.remove(user.mobile)
-                                        }
-                                    },
-                                    modifier = Modifier.size(24.dp)  // Explicit size for better hit target
+                                    .border(
+                                        2.dp,
+                                        if (user.mobile in assignedTo) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                        RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = androidx.compose.material3.CardDefaults.cardColors(
+                                    containerColor = if (user.mobile in assignedTo) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
                                 )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(user.name, fontWeight = FontWeight.Bold)
-                                    Text(user.mobile, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp)
+                                ) {
+                                    // ✅ CRITICAL: Create NEW list instead of mutating
+                                    // This ensures Compose detects the state change and recomposes immediately
+                                    androidx.compose.material3.Checkbox(
+                                        checked = user.mobile in assignedTo,
+                                        onCheckedChange = { isChecked ->
+                                            assignedTo = if (isChecked) {
+                                                (assignedTo + user.mobile).toMutableList()
+                                            } else {
+                                                (assignedTo - user.mobile).toMutableList()
+                                            }
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(user.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                        Text(user.mobile, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
                             }
                         }
                     }
                     
+                    // 🎨 FOOTER SECTION - Buttons
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         TextButton(onClick = { showCreateReminder = false }, modifier = Modifier.weight(1f)) {
@@ -2677,7 +2707,7 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
                                     viewModel.addReminder(reminderTitle, reminderDetails, assignedTo.toList())
                                     reminderTitle = ""
                                     reminderDetails = ""
-                                    assignedTo.clear()
+                                    assignedTo = mutableListOf()  // ✅ Reset state properly
                                     showCreateReminder = false
                                     Toast.makeText(context, "Reminder created!", Toast.LENGTH_SHORT).show()
                                 }

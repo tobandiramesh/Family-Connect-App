@@ -156,6 +156,50 @@ class IncomingCallActivity : ComponentActivity() {
         }
     }
     
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)  // CRITICAL: Update intent FIRST
+        
+        val TAG = "IncomingCallActivity"
+        Log.d(TAG, "📞 onNewIntent() called - new call arrived")
+        Log.d(TAG, "   Intent: ${intent?.action}")
+        Log.d(TAG, "   Extras: ${intent?.extras?.keySet()}")
+        
+        // Extract NEW call data from the fresh intent
+        val callId = intent.getStringExtra(NotificationHelper.EXTRA_CALL_ID)
+        val threadId = intent.getStringExtra(NotificationHelper.EXTRA_THREAD_ID)
+        val callerName = intent.getStringExtra(NotificationHelper.EXTRA_CALLER_NAME)
+        val callType = intent.getStringExtra(NotificationHelper.EXTRA_CALL_TYPE) ?: "audio"
+        
+        Log.d(TAG, "   📞 New Call Data:")
+        Log.d(TAG, "      callId: $callId")
+        Log.d(TAG, "      threadId: $threadId")
+        Log.d(TAG, "      callerName: $callerName")
+        Log.d(TAG, "      callType: $callType")
+        
+        if (!callId.isNullOrBlank() && !threadId.isNullOrBlank()) {
+            try {
+                val app = application as FamilyConnectApp
+                val viewModel = ViewModelProvider(
+                    this,
+                    FamilyViewModelFactory(app.repository, this)
+                )[FamilyViewModel::class.java]
+                
+                Log.d(TAG, "   🔄 Updating call state to RINGING with new call...")
+                viewModel.setIncomingCallRinging(callId, threadId, callerName ?: "Unknown", callType)
+                Log.d(TAG, "   ✅ Call state updated")
+                
+                Log.d(TAG, "   📄 Updating pending call...")
+                app.setPendingCall(PendingCallIntent(callId, threadId, callerName ?: "Unknown", callType))
+                Log.d(TAG, "   ✅ Pending call updated")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error in onNewIntent: ${e.message}", e)
+            }
+        } else {
+            Log.w(TAG, "⚠️ Invalid call data in new intent")
+        }
+    }
+    
     override fun onDestroy() {
         super.onDestroy()
         val TAG = "IncomingCallActivity"
