@@ -65,6 +65,35 @@ class CallForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // 🔥 ACCEPT ACTION
+        val acceptIntent = Intent(this, CallActionReceiver::class.java).apply {
+            action = NotificationHelper.ACTION_ACCEPT_CALL
+            putExtra(NotificationHelper.EXTRA_CALL_ID, callId)
+            putExtra(NotificationHelper.EXTRA_THREAD_ID, threadId)
+            putExtra(NotificationHelper.EXTRA_CALLER_NAME, callerName)
+        }
+
+        val acceptPendingIntent = PendingIntent.getBroadcast(
+            this,
+            callId.hashCode(),
+            acceptIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 🔥 REJECT ACTION
+        val rejectIntent = Intent(this, CallActionReceiver::class.java).apply {
+            action = NotificationHelper.ACTION_REJECT_CALL
+            putExtra(NotificationHelper.EXTRA_CALL_ID, callId)
+            putExtra(NotificationHelper.EXTRA_THREAD_ID, threadId)
+        }
+
+        val rejectPendingIntent = PendingIntent.getBroadcast(
+            this,
+            callId.hashCode() + 1,
+            rejectIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         // 🔥 STEP 1: Create MINIMAL foreground notification FIRST
         Log.d(TAG, "   ✅ STEP 1: Creating minimal foreground notification...")
         val tempNotification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
@@ -81,6 +110,7 @@ class CallForegroundService : Service() {
 
         // 🔥 STEP 3: NOW build FULL-SCREEN notification (after foreground established)
         Log.d(TAG, "   ✅ STEP 3: Building full-screen notification...")
+        val notificationId = Math.abs(callId.hashCode())
         val fullScreenNotification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setContentTitle("📞 Incoming Call")
@@ -90,6 +120,11 @@ class CallForegroundService : Service() {
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setFullScreenIntent(pendingIntent, true)
+            
+            // 🔥 ACTION BUTTONS
+            .addAction(android.R.drawable.ic_menu_call, "Accept", acceptPendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Reject", rejectPendingIntent)
+            
             .setOngoing(true)
             .setAutoCancel(false)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
@@ -97,10 +132,9 @@ class CallForegroundService : Service() {
             .setVibrate(longArrayOf(0, 500, 300, 500))
             .build()
 
-        // 🔥 STEP 4: Update notification (now with full-screen intent)
+        // 🔥 STEP 4: Update notification (now with full-screen intent and action buttons)
         // ✅ Use UNIQUE notification ID per call to avoid collisions
-        Log.d(TAG, "   ✅ STEP 4: Updating notification with full-screen intent...")
-        val notificationId = Math.abs(callId.hashCode())
+        Log.d(TAG, "   ✅ STEP 4: Updating notification with full-screen intent and action buttons...")
         val manager = NotificationManagerCompat.from(this)
         manager.notify(notificationId, fullScreenNotification)
         Log.d(TAG, "   ✅ STEP 4: Notification updated (ID: $notificationId)")
@@ -117,8 +151,8 @@ class CallForegroundService : Service() {
         // Notification lifecycle requires foreground service to stay alive
         // Service will be stopped when:
         // - User accepts/rejects call
-        // - Call times out
         // - User closes notification
+        // - Call is cancelled remotely
         Log.d(TAG, "   📌 Service remaining active to maintain notification stability")
     }
 
