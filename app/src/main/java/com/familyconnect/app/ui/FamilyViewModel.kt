@@ -463,16 +463,23 @@ class FamilyViewModel(
                 val newMessageIds = messages.map { it.messageId }.toSet()
                 val addedMessages = messages.filter { it.messageId !in previousMessageIds }
                 
-                // Post notification for new messages from other users
+                // 🔥 CRITICAL FIX: Only post notifications for OTHER threads
+                // If user is viewing THIS thread, don't spam notifications!
                 for (message in addedMessages) {
                     if (message.senderMobile != currentUser?.mobile) {
-                        NotificationHelper.postMessageNotification(
-                            context = context,
-                            id = message.messageId.hashCode(),
-                            senderName = message.senderName,
-                            messageBody = message.body.take(100),
-                            threadId = thread.threadId
-                        )
+                        // 🚫 Check: Is this thread currently being viewed?
+                        val isCurrentThreadSelected = selectedChatThread?.threadId == thread.threadId
+                        
+                        if (!isCurrentThreadSelected) {
+                            // ✅ Only post notification if user is NOT viewing this thread
+                            NotificationHelper.postMessageNotification(
+                                context = context,
+                                id = message.messageId.hashCode(),
+                                senderName = message.senderName,
+                                messageBody = message.body.take(100),
+                                threadId = thread.threadId
+                            )
+                        }
                     }
                 }
                 

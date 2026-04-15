@@ -92,6 +92,7 @@
         <activity
             android:name=".activities.IncomingCallActivity"
             android:exported="true"
+            android:parentActivityName=".MainActivity"
             android:showOnLockScreen="true"
             android:turnScreenOn="true"
             android:excludeFromRecents="true"

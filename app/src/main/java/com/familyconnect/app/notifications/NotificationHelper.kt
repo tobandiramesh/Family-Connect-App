@@ -22,6 +22,8 @@ object NotificationHelper {
     const val CHANNEL_REMINDERS = "family_connect_reminders"
 
     const val CALL_NOTIFICATION_ID = 9001
+    const val CALL_GROUP_KEY = "CALL_GROUP"  // 🔥 Forces Android to treat notifications as grouped
+    const val CALL_GROUP_SUMMARY_ID = 999999  // Constant ID for summary notification
     const val ACTION_ACCEPT_CALL = "com.familyconnect.app.ACTION_ACCEPT_CALL"
     const val ACTION_REJECT_CALL = "com.familyconnect.app.ACTION_REJECT_CALL"
     const val EXTRA_CALL_ID = "extra_call_id"
@@ -266,5 +268,23 @@ object NotificationHelper {
         // Must match: val notificationId = Math.abs(callId.hashCode())
         val notificationId = Math.abs(callId.hashCode())
         NotificationManagerCompat.from(context).cancel(notificationId)
+        // Also cancel summary notification
+        NotificationManagerCompat.from(context).cancel(CALL_GROUP_SUMMARY_ID)
+    }
+
+    fun postGroupSummaryNotification(context: Context) {
+        // 🔥 CRITICAL: Dummy summary notification that forces Android to treat calls as grouped
+        // When notifications are grouped, Android allows tap events (normal notification list behavior)
+        val notification = NotificationCompat.Builder(context, CHANNEL_CALLS)
+            .setSmallIcon(android.R.drawable.ic_menu_call)
+            .setContentTitle("Incoming Calls")
+            .setContentText("You have incoming calls")
+            .setGroup(CALL_GROUP_KEY)
+            .setGroupSummary(true)  // 🔥 KEY: This makes it a group summary
+            .setAutoCancel(true)
+            .build()
+
+        NotificationManagerCompat.from(context).notify(CALL_GROUP_SUMMARY_ID, notification)
+        Log.d("NotificationHelper", "✅ Group summary notification posted")
     }
 }

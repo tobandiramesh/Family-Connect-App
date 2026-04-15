@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.app.ActivityCompat
+import androidx.core.app.TaskStackBuilder
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -290,63 +291,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     
-    // 🧪 TEST FUNCTION: Trigger a test incoming call with 5-second delay
-    fun triggerTestCallWithDelay() {
-        Log.d("MainActivity", "🧪 Test: Scheduling call notification in 5 seconds...")
-        
-        Handler(Looper.getMainLooper()).postDelayed({
-            Log.d("MainActivity", "🧪 Test: 5 seconds elapsed, triggering test call notification...")
-            
-            val testCallId = "test_call_${System.currentTimeMillis()}"
-            val intent = Intent(this, com.familyconnect.app.activities.IncomingCallActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                
-                putExtra(NotificationHelper.EXTRA_CALLER_NAME, "🧪 Test Caller")
-                putExtra(NotificationHelper.EXTRA_CALL_ID, testCallId)
-                putExtra(NotificationHelper.EXTRA_THREAD_ID, "test_thread")
-                putExtra(NotificationHelper.EXTRA_CALL_TYPE, "audio")
-            }
-            
-            // 🔥 CRITICAL: Use unique requestCode to prevent PendingIntent reuse
-            val uniqueRequestCode = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
-            val pendingIntent = PendingIntent.getActivity(
-                this,
-                uniqueRequestCode,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT
-            )
-            
-            val notification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
-                .setSmallIcon(android.R.drawable.ic_menu_call)
-                .setContentTitle("🧪 TEST Incoming Call")
-                .setContentText("Test Caller is calling...")
-                .setPriority(NotificationCompat.PRIORITY_MAX)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setContentIntent(pendingIntent) // ✅ SIMPLE: Just contentIntent (no fullscreen, no service behavior flags)
-                
-                .setAutoCancel(true) // ✅ Allow dismissal on Android 14+
-                .setOngoing(false) // 🔥 CRITICAL: Must be false to allow user interaction
-                .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE))
-                .setVibrate(longArrayOf(0, 500, 300, 500))
-                .build()
-            
-            // 🔥 CRITICAL: Acquire WakeLock to ensure screen wakes up
-            Log.d("MainActivity", "🧪 Test: Acquiring WakeLock to wake screen...")
-            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            val wakeLock = pm.newWakeLock(
-                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                "app:call_wake_test"
-            )
-            wakeLock.acquire(3000) // 3 second timeout
-            Log.d("MainActivity", "✅ Test: WakeLock acquired")
-            
-            // Post notification with FullScreenIntent
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.notify(999, notification)
-            
-            Log.d("MainActivity", "✅ Test: Notification posted with FullScreenIntent!")
-        }, 5000) // 5 second delay
-    }
+
 }
 
 @Composable
@@ -355,16 +300,6 @@ private fun Root(app: FamilyConnectApp, mainActivity: MainActivity, onViewModelR
     onViewModelReady(viewModel)
     
     Column(modifier = Modifier.fillMaxWidth()) {
-        // 🧪 TEST BUTTON: Trigger test incoming call
-        Button(
-            onClick = { mainActivity.triggerTestCallWithDelay() },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Text("🧪 Test Incoming Call (5 sec delay)")
-        }
-        
         // UI content goes here
         FamilyConnectRoot(viewModel = viewModel)
     }

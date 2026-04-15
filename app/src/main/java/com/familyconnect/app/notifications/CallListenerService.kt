@@ -8,10 +8,12 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.TaskStackBuilder
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.ChildEventListener
 import android.content.ComponentName
 import android.os.Bundle
 import android.app.PendingIntent
@@ -52,6 +54,7 @@ class CallListenerService : Service() {
     private lateinit var database: FirebaseDatabase
     private var callListener: ValueEventListener? = null
     private var messageListener: ValueEventListener? = null
+    private var realtimeMessagesListener: com.google.firebase.database.ChildEventListener? = null  // 🔥 Direct message listener (ChildEventListener)
     private var userMobile: String = ""
     private var userName: String = ""
     private var wakeLock: PowerManager.WakeLock? = null
@@ -62,6 +65,7 @@ class CallListenerService : Service() {
     
     // Keep strong references to database paths
     private var chatsRef: com.google.firebase.database.DatabaseReference? = null
+    private var messagesRef: com.google.firebase.database.DatabaseReference? = null  // 🔥 For direct message listening
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -167,6 +171,10 @@ class CallListenerService : Service() {
                 startMessageListener()
                 Log.d(TAG, "   ✅ Message listener started")
                 
+                Log.d(TAG, "   🔥 Starting real-time message listener...")
+                startRealtimeMessageListener()
+                Log.d(TAG, "   ✅ Real-time message listener started")
+                
                 Log.d(TAG, "✅✅✅ SERVICE FULLY STARTED AND LISTENING ✅✅✅")
             } catch (e: Exception) {
                 Log.e(TAG, "   ❌ Error starting listeners: ${e.message}", e)
@@ -245,15 +253,15 @@ class CallListenerService : Service() {
                                     putExtra(NotificationHelper.EXTRA_CALL_TYPE, callType)
                                 }
                                 
-                                // 🔥 CRITICAL: Use unique requestCode to prevent PendingIntent reuse
-                                val uniqueRequestCode = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
-                                
-                                val pendingIntent = PendingIntent.getActivity(
-                                    this@CallListenerService,
-                                    uniqueRequestCode,
-                                    callIntent,
-                                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                                )
+                                // 🔥 CRITICAL FIX: Use TaskStackBuilder to create proper app back stack
+                                // This allows Android to launch non-root activities from background notifications
+                                val pendingIntent = TaskStackBuilder.create(this@CallListenerService).run {
+                                    addNextIntentWithParentStack(callIntent)
+                                    getPendingIntent(
+                                        0,
+                                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                                    )
+                                }
                                 
                                 // 🔥 Build call notification - DIRECTLY in this service, not nested
                                 // REMOVED: .setCategory(NotificationCompat.CATEGORY_CALL)
@@ -263,9 +271,13 @@ class CallListenerService : Service() {
                                     .setSmallIcon(android.R.drawable.ic_menu_call)
                                     .setContentTitle("Incoming Call")
                                     .setContentText("$fromUserName is calling...")
-                                    .setPriority(NotificationCompat.PRIORITY_MAX)
+                                    .setPriority(NotificationCompat.PRIORITY_DEFAULT) // ✅ Changed to DEFAULT - avoids "alert" mode suppression
+                                    .setCategory(NotificationCompat.CATEGORY_MESSAGE)
                                     .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                                    .setContentIntent(pendingIntent) // ✅ SIMPLE: Just contentIntent (no fullscreen, no service behavior flags)
+                                    .setContentIntent(pendingIntent)
+                                    .setGroup("CALL_GROUP") // ✅ CRITICAL: Group ensures normal click behavior
+                                    .setGroupSummary(false)
+                                    .setOnlyAlertOnce(true) // ✅ CRITICAL: Prevents excessive alerts, ensures clicks work
                                     .setAutoCancel(true)
                                     .setOngoing(false)
                                     .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE))
@@ -381,6 +393,78 @@ class CallListenerService : Service() {
         }
     }
 
+    // 🔥 CRITICAL: Real-time message listener
+    // Uses ChildEventListener to detect NEW messages only (not initial load)
+    // This ensures notifications for EVERY message received, not just the first time
+    private fun startRealtimeMessageListener() {
+        // Remove old listener if exists
+        realtimeMessagesListener?.let {
+            messagesRef?.removeEventListener(it)
+        }
+
+        if (messagesRef == null) {
+            messagesRef = database.getReference("messages")
+            messagesRef?.keepSynced(true)
+        }
+
+        // Listen for each thread's messages
+        realtimeMessagesListener = object : com.google.firebase.database.ChildEventListener {
+            override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                // New thread added - start listening to its messages
+                val threadId = snapshot.key ?: return
+                listenToThreadMessages(threadId, snapshot)
+            }
+
+            override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                // Thread changed - check for new messages
+                val threadId = snapshot.key ?: return
+                listenToThreadMessages(threadId, snapshot)
+            }
+
+            override fun onChildRemoved(snapshot: DataSnapshot) {}
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+            override fun onCancelled(error: DatabaseError) {
+                Log.e(TAG, "❌ Thread listener cancelled: ${error.message}")
+            }
+        }
+
+        messagesRef?.addChildEventListener(realtimeMessagesListener!!)
+        Log.d(TAG, "✅ Real-time child listener registered on messages path")
+    }
+
+    // Helper to listen to individual thread messages
+    private fun listenToThreadMessages(threadId: String, threadSnapshot: DataSnapshot) {
+        for (msgSnapshot in threadSnapshot.children) {
+            val messageId = msgSnapshot.child("messageId").value as? String ?: continue
+            val senderMobile = msgSnapshot.child("senderMobile").value as? String ?: ""
+            val senderName = msgSnapshot.child("senderName").value as? String ?: "Someone"
+            val body = msgSnapshot.child("body").value as? String ?: ""
+            
+            // 🚫 Skip if it's our message
+            if (senderMobile == userMobile) continue
+            
+            // 🚫 Skip if already notified
+            if (messageId in notifiedMessageIds) continue
+            
+            // ✅ Post notification immediately for new message
+            notifiedMessageIds.add(messageId)
+            Log.d(TAG, "📨 New message detected: $messageId from $senderName")
+            
+            try {
+                NotificationHelper.postMessageNotification(
+                    context = this@CallListenerService,
+                    id = messageId.hashCode(),
+                    senderName = senderName,
+                    messageBody = body.take(100),
+                    threadId = threadId
+                )
+                Log.d(TAG, "✅ Message notification posted for: $senderName")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error posting notification: ${e.message}", e)
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
 
@@ -390,8 +474,12 @@ class CallListenerService : Service() {
         messageListener?.let {
             chatsRef?.removeEventListener(it)
         }
+        realtimeMessagesListener?.let {
+            messagesRef?.removeEventListener(it)
+        }
         callListener = null
         messageListener = null
+        realtimeMessagesListener = null
         releaseWakeLock()
         
         scheduleServiceRestart()
