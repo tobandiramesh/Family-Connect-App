@@ -145,37 +145,13 @@ class FCMService : FirebaseMessagingService() {
 
             Log.d(TAG, "📞 Incoming call from FCM: $callId from $callerName")
             
-            // � Using CallForegroundService for incoming call handling
-            try {
-                Log.d(TAG, "   📱 Triggering incoming call via CallForegroundService...")
-                fallbackToCallForegroundService(callId, threadId, callerName, callType)
-                return
-            } catch (e: Exception) {
-                Log.e(TAG, "   ❌ Error triggering telecom call: ${e.message}", e)
-                fallbackToCallForegroundService(callId, threadId, callerName, callType)
-            }
+            // ✅ FIXED: Removed nested CallForegroundService (was blocking notification taps)
+            // CallListenerService (single foreground service) listens to Firebase and posts notifications
+            // Single foreground service context allows taps to work on Android 14+
+            Log.d(TAG, "   ✅ Notification will be posted by CallListenerService (Firebase listener)")
         }
     }
-
-    private fun fallbackToCallForegroundService(
-        callId: String,
-        threadId: String,
-        callerName: String,
-        callType: String
-    ) {
-        Log.d(TAG, "   🔄 Falling back to CallForegroundService...")
-        val serviceIntent = Intent(this, CallForegroundService::class.java).apply {
-            putExtra(NotificationHelper.EXTRA_CALL_ID, callId)
-            putExtra(NotificationHelper.EXTRA_THREAD_ID, threadId)
-            putExtra(NotificationHelper.EXTRA_CALLER_NAME, callerName)
-            putExtra(NotificationHelper.EXTRA_CALL_TYPE, callType)
-        }
-        
-        try {
-            androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
-            Log.d(TAG, "   ✅ CallForegroundService started")
-        } catch (e: Exception) {
-            Log.e(TAG, "   ❌ Error starting foreground service: ${e.message}", e)
-        }
-    }
+    
+    // ✅ REMOVED: fallbackToCallForegroundService() method - no longer needed
+    // CallListenerService handles all notifications via Firebase listener (single foreground service)
 }

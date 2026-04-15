@@ -14,6 +14,9 @@ import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import android.content.ComponentName
 import android.os.Bundle
+import android.app.PendingIntent
+import android.app.NotificationManager
+import android.net.Uri
 
 /**
  * Foreground service that maintains Firebase Realtime Database listeners
@@ -222,16 +225,61 @@ class CallListenerService : Service() {
                             && callId !in notifiedCallIds
                             && (System.currentTimeMillis() - createdAt) < 60_000
                         ) {
-                            Log.d(TAG, "📞 Incoming call detected: $callId from $fromUserName")
+                            // 🔥 CRITICAL: Mark as notified FIRST (before any async operations)
+                            // This prevents Firebase from triggering the same call multiple times
                             notifiedCallIds.add(callId)
+                            
+                            Log.d(TAG, "📞 Incoming call detected: $callId from $fromUserName")
 
-                            // � Use direct CallForegroundService for incoming call handling
-                            Log.d(TAG, "📱 Triggering incoming call via CallForegroundService...")
+                            // 🔥 REAL FIX: Create notification directly in this service context
+                            // NOT nested inside another foreground service (which blocks clicks on Android 13+)
+                            Log.d(TAG, "📱 Creating and posting interactive call notification...")
+                            
                             try {
-                                fallbackToCallForegroundService(callId, threadId, fromUserName, callType)
+                                // Create Intent for IncomingCallActivity
+                                val callIntent = Intent(this@CallListenerService, com.familyconnect.app.activities.IncomingCallActivity::class.java).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                    putExtra(NotificationHelper.EXTRA_CALL_ID, callId)
+                                    putExtra(NotificationHelper.EXTRA_THREAD_ID, threadId)
+                                    putExtra(NotificationHelper.EXTRA_CALLER_NAME, fromUserName)
+                                    putExtra(NotificationHelper.EXTRA_CALL_TYPE, callType)
+                                }
+                                
+                                // 🔥 CRITICAL: Use unique requestCode to prevent PendingIntent reuse
+                                val uniqueRequestCode = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
+                                
+                                val pendingIntent = PendingIntent.getActivity(
+                                    this@CallListenerService,
+                                    uniqueRequestCode,
+                                    callIntent,
+                                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                                )
+                                
+                                // 🔥 Build call notification - DIRECTLY in this service, not nested
+                                // REMOVED: .setCategory(NotificationCompat.CATEGORY_CALL)
+                                // Reason: Android 14+ restricts CATEGORY_CALL to system dialer apps only
+                                // Use normal high-priority notification instead
+                                val notification = NotificationCompat.Builder(this@CallListenerService, NotificationHelper.CHANNEL_CALLS)
+                                    .setSmallIcon(android.R.drawable.ic_menu_call)
+                                    .setContentTitle("Incoming Call")
+                                    .setContentText("$fromUserName is calling...")
+                                    .setPriority(NotificationCompat.PRIORITY_MAX)
+                                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                                    .setContentIntent(pendingIntent) // ✅ SIMPLE: Just contentIntent (no fullscreen, no service behavior flags)
+                                    .setAutoCancel(true)
+                                    .setOngoing(false)
+                                    .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE))
+                                    .setVibrate(longArrayOf(0, 500, 300, 500))
+                                    .build()
+                                
+                                // 🔥 Post notification directly from service (NOT from nested service)
+                                val notificationManager = this@CallListenerService.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                                val notificationId = Math.abs(callId.hashCode())
+                                notificationManager.notify(notificationId, notification)
+                                
+                                Log.d(TAG, "✅ Call notification posted (interactive, from service context)")
                             } catch (e: Exception) {
-                                Log.e(TAG, "   ❌ Error triggering telecom call: ${e.message}", e)
-                                fallbackToCallForegroundService(callId, threadId, fromUserName, callType)
+                                Log.e(TAG, "❌ Error posting call notification: ${e.message}", e)
                             }
                             
                             // Set pending call for UI overlay (for when app already open)
@@ -247,6 +295,11 @@ class CallListenerService : Service() {
                                 Log.d(TAG, "✅ Pending call state set, UI should show call screen")
                             } catch (e: Exception) {
                                 Log.e(TAG, "❌ Error setting pending call: ${e.message}", e)
+                            }
+                        } else {
+                            // 🔥 Duplicate or invalid call - skip processing
+                            if (callId.isNotBlank() && callId in notifiedCallIds) {
+                                Log.d(TAG, "🚫 Duplicate call ignored: $callId (already processed)")
                             }
                         }
                     }
@@ -355,28 +408,6 @@ class CallListenerService : Service() {
             }
         } catch (e: Exception) {
             // Silent failure
-        }
-    }
-
-    private fun fallbackToCallForegroundService(
-        callId: String,
-        threadId: String,
-        callerName: String,
-        callType: String
-    ) {
-        Log.d(TAG, "   🔄 Falling back to CallForegroundService...")
-        val serviceIntent = Intent(this, CallForegroundService::class.java).apply {
-            putExtra(NotificationHelper.EXTRA_CALL_ID, callId)
-            putExtra(NotificationHelper.EXTRA_THREAD_ID, threadId)
-            putExtra(NotificationHelper.EXTRA_CALLER_NAME, callerName)
-            putExtra(NotificationHelper.EXTRA_CALL_TYPE, callType)
-        }
-        
-        try {
-            androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
-            Log.d(TAG, "   ✅ CallForegroundService started")
-        } catch (e: Exception) {
-            Log.e(TAG, "   ❌ Error starting foreground service: ${e.message}", e)
         }
     }
 }

@@ -3,6 +3,7 @@ package com.familyconnect.app
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -296,38 +297,35 @@ class MainActivity : ComponentActivity() {
         Handler(Looper.getMainLooper()).postDelayed({
             Log.d("MainActivity", "🧪 Test: 5 seconds elapsed, triggering test call notification...")
             
+            val testCallId = "test_call_${System.currentTimeMillis()}"
             val intent = Intent(this, com.familyconnect.app.activities.IncomingCallActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                
                 putExtra(NotificationHelper.EXTRA_CALLER_NAME, "🧪 Test Caller")
-                putExtra(NotificationHelper.EXTRA_CALL_ID, "test_call_${System.currentTimeMillis()}")
+                putExtra(NotificationHelper.EXTRA_CALL_ID, testCallId)
                 putExtra(NotificationHelper.EXTRA_THREAD_ID, "test_thread")
                 putExtra(NotificationHelper.EXTRA_CALL_TYPE, "audio")
             }
             
+            // 🔥 CRITICAL: Use unique requestCode to prevent PendingIntent reuse
+            val uniqueRequestCode = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
             val pendingIntent = PendingIntent.getActivity(
                 this,
-                1001,
+                uniqueRequestCode,
                 intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT
             )
             
             val notification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
                 .setSmallIcon(android.R.drawable.ic_menu_call)
                 .setContentTitle("🧪 TEST Incoming Call")
                 .setContentText("Test Caller is calling...")
-                .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setFullScreenIntent(pendingIntent, true)
+                .setContentIntent(pendingIntent) // ✅ SIMPLE: Just contentIntent (no fullscreen, no service behavior flags)
                 
-                // 🔥 FALLBACK: For unlocked phone or notification tap
-                .setContentIntent(pendingIntent)
-                
-                // 🔥 CRITICAL: Foreground service behavior for Android 12+
-                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-                
-                .setAutoCancel(false)
-                .setOngoing(true)
+                .setAutoCancel(true) // ✅ Allow dismissal on Android 14+
+                .setOngoing(false) // 🔥 CRITICAL: Must be false to allow user interaction
                 .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE))
                 .setVibrate(longArrayOf(0, 500, 300, 500))
                 .build()

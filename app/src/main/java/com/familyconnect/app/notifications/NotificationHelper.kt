@@ -12,11 +12,11 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.familyconnect.app.MainActivity
-import com.familyconnect.app.IncomingCallActivity
+import com.familyconnect.app.activities.IncomingCallActivity
 
 object NotificationHelper {
     private const val CHANNEL_ID = "family_connect_updates"
-    const val CHANNEL_CALLS = "family_connect_calls"
+    const val CHANNEL_CALLS = "family_connect_calls_v2"  // 🔥 CHANGED: New ID forces Android to create fresh channel with IMPORTANCE_HIGH
     const val CHANNEL_MESSAGES = "family_connect_messages"
     const val CHANNEL_SERVICE = "family_connect_service"
     const val CHANNEL_REMINDERS = "family_connect_reminders"
@@ -242,9 +242,9 @@ object NotificationHelper {
             .setContentTitle("📞 Incoming Call")
             .setContentText("$callerName is calling...")
             .setContentIntent(pendingIntent)
-            .setFullScreenIntent(pendingIntent, true)
+            .setFullScreenIntent(pendingIntent, false) // ✅ Changed to false - allows ContentIntent fallback
             .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE) // ✅ Changed from CATEGORY_CALL - allows ContentIntent to fire
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setAutoCancel(false)  // Don't auto-cancel so user intentionally dismisses
