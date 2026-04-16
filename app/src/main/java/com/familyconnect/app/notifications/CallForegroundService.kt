@@ -56,29 +56,35 @@ class CallForegroundService : Service() {
             )
         }
 
-        // 🔥 MAIN CALL NOTIFICATION
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
+        // 🔥 MAIN NOTIFICATION
         val notification = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setContentTitle("Incoming Call")
             .setContentText("$callerName is calling...")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)  // HIGH for visibility
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setContentIntent(pendingIntent)
-            .setGroup(NotificationHelper.CALL_GROUP_KEY)  // 🔥 CRITICAL: Use grouped notification
-            .setGroupSummary(false)  // This is a child, not the summary
+            .setGroup("CALL_GROUP")
             .setAutoCancel(true)
-            .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE))
-            .setVibrate(longArrayOf(0, 500, 300, 500))
             .build()
 
-        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(Math.abs(callId.hashCode()), notification)
-        
-        // 🔥 POST DUMMY SUMMARY NOTIFICATION
+        manager.notify(callId.hashCode(), notification)
+
+        // 🔥 SUMMARY NOTIFICATION (CRITICAL)
         // Forces Android to treat as grouped → allows normal tap behavior
-        NotificationHelper.postGroupSummaryNotification(this)
+        val summary = NotificationCompat.Builder(this, NotificationHelper.CHANNEL_CALLS)
+            .setSmallIcon(android.R.drawable.ic_menu_call)
+            .setContentTitle("Calls")
+            .setContentText("Incoming calls")
+            .setGroup("CALL_GROUP")
+            .setGroupSummary(true)
+            .build()
+
+        manager.notify(9999, summary)
         
-        Log.d("CALL_DEBUG", "✅ Main notification + summary posted successfully")
+        Log.d("CALL_DEBUG", "✅ Call notification posted successfully")
     }
 }
 
