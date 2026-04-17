@@ -822,8 +822,12 @@ private fun InviteMembersBottomSheet(
     var members by remember { mutableStateOf(selectedMembers) }
     var searchQuery by remember { mutableStateOf("") }
 
-    // Filter out current user
-    val otherUsers = allowedUsers.filter { it.mobile != viewModel.currentUser?.mobile }
+    // Filter out current user (trim both for comparison)
+    val currentUserMobile = viewModel.currentUser?.mobile?.trim() ?: ""
+    val otherUsers = allowedUsers.filter { it.mobile.trim() != currentUserMobile }
+    
+    Log.d("InviteMembersBS", "Current mobile: '$currentUserMobile', Total users: ${allowedUsers.size}, Other users (filtered): ${otherUsers.size}")
+    
     val filteredUsers = if (searchQuery.isEmpty()) {
         otherUsers
     } else {
