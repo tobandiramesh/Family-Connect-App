@@ -15,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Arrangement
@@ -42,17 +43,23 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Info
@@ -65,8 +72,10 @@ import androidx.compose.material.icons.filled.Note
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoCall
@@ -74,10 +83,16 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -95,6 +110,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.text.input.ImeAction
@@ -108,6 +124,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -122,6 +139,7 @@ import androidx.core.content.ContextCompat
 import com.familyconnect.app.FamilyConnectApp
 import com.familyconnect.app.data.model.ChatMessageData
 import com.familyconnect.app.data.model.FamilyEvent
+import com.familyconnect.app.data.repository.AllowedUser
 import com.familyconnect.app.webrtc.CallType
 import com.familyconnect.app.data.model.FamilyRole
 import com.familyconnect.app.ui.theme.FamilyConnectTheme
@@ -243,179 +261,248 @@ private fun AuthScreen(viewModel: FamilyViewModel) {
     var adminMobile by remember { mutableStateOf("") }
     var adminPin by remember { mutableStateOf("") }
     val adminUnlocked = viewModel.isAdminSetupAuthorized(adminMobile, adminPin)
+    val isValidMobile = viewModel.loginMobile.length == 10
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Header with gradient background
+    if (!showAdminSetup) {
+        // 🎯 Modern Login Screen - Clean & Centered
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .background(
-                    MaterialTheme.colorScheme.primary,
-                    shape = RoundedCornerShape(16.dp)
+                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                        colors = listOf(Color(0xFFEDE7F6), Color.White)
+                    )
                 )
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // 🟣 Logo + App Name
             Text(
-                "👨‍👩‍👧‍👦 Bandi Family",
-                style = MaterialTheme.typography.headlineLarge,
+                text = "👨‍👩‍👧‍👦 Bandi Family",
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             Text(
-                "Connect & Share",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                text = "Connect & Share",
+                fontSize = 14.sp,
+                color = Color.Gray,
+                textAlign = TextAlign.Center
             )
-        }
 
-        // Login with modern design
-        Text(
-            "Welcome Back",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold
-        )
+            Spacer(modifier = Modifier.height(40.dp))
 
-        OutlinedTextField(
-            value = viewModel.loginMobile,
-            onValueChange = { viewModel.loginMobile = it.filter(Char::isDigit) },
-            label = { Text("Mobile Number") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
-        )
-
-        Button(
-            onClick = { viewModel.login() },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("Login to Chat", style = MaterialTheme.typography.titleMedium)
-        }
-
-        viewModel.loginError?.let {
-            Card(
+            // 📱 Mobile Input Field
+            OutlinedTextField(
+                value = viewModel.loginMobile,
+                onValueChange = { viewModel.loginMobile = it.filter(Char::isDigit).take(10) },
+                label = { Text("Mobile Number") },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
+                shape = RoundedCornerShape(14.dp),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 🔵 Login Button - Strong CTA
+            Button(
+                onClick = { viewModel.login() },
+                enabled = isValidMobile,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text("Login to Chat", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
+
+            // ❌ Error Message
+            viewModel.loginError?.let {
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = androidx.compose.material3.CardDefaults.cardColors(
+                        containerColor = Color(0xFFFFEBEE)
+                    )
+                ) {
+                    Text(
+                        text = it,
+                        color = Color(0xFFE53935),
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 🧠 Helper Text
+            Text(
+                text = "Only registered family members can log in.",
+                fontSize = 12.sp,
+                color = Color.Gray,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 🔗 Admin Setup Link
+            TextButton(
+                onClick = { showAdminSetup = true }
             ) {
                 Text(
-                    text = it,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.bodyMedium
+                    text = "Open Admin Setup →",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
+    } else {
+        // 🔐 Admin Setup Screen
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            TextButton(onClick = { showAdminSetup = false }) {
+                Text("← Back to Login")
+            }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Info card with rounded corners
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = androidx.compose.material3.CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            Text("🔐 Admin Setup", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(
+                "Enter admin credentials to manage family members",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("📋 Login Policy", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                Text("Only registered family members can log in. Contact your admin to add new members.", style = MaterialTheme.typography.bodySmall)
-            }
-        }
 
-        TextButton(
-            onClick = { showAdminSetup = !showAdminSetup },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (showAdminSetup) "← Hide Admin Setup" else "Open Admin Setup →")
-        }
-
-        if (showAdminSetup) {
-            Card(
+            OutlinedTextField(
+                value = adminMobile,
+                onValueChange = { adminMobile = it.filter(Char::isDigit) },
+                label = { Text("Admin Mobile Number") },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            OutlinedTextField(
+                value = adminPin,
+                onValueChange = { adminPin = it.filter(Char::isDigit) },
+                label = { Text("Admin Setup PIN") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            if (adminUnlocked) {
+                Divider()
+                Text("Add New Family Member", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                OutlinedTextField(
+                    value = viewModel.registerName,
+                    onValueChange = { viewModel.registerName = it },
+                    label = { Text("Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
                 )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+
+                OutlinedTextField(
+                    value = viewModel.registerMobile,
+                    onValueChange = { viewModel.registerMobile = it.filter(Char::isDigit) },
+                    label = { Text("Mobile Number") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("🔐 Admin Setup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "Enter admin credentials to manage family members",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-
-                    OutlinedTextField(
-                        value = adminMobile,
-                        onValueChange = { adminMobile = it.filter(Char::isDigit) },
-                        label = { Text("Admin Mobile Number") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = adminPin,
-                        onValueChange = { adminPin = it.filter(Char::isDigit) },
-                        label = { Text("Admin Setup PIN") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    if (adminUnlocked) {
-                        OutlinedTextField(
-                            value = viewModel.registerName,
-                            onValueChange = { viewModel.registerName = it },
-                            label = { Text("Name") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        OutlinedTextField(
-                            value = viewModel.registerMobile,
-                            onValueChange = { viewModel.registerMobile = it.filter(Char::isDigit) },
-                            label = { Text("Allowed Mobile Number") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FamilyRole.entries.forEach { role ->
-                                FilterChip(
-                                    selected = viewModel.registerRole == role,
-                                    onClick = { viewModel.registerRole = role },
-                                    label = { Text(role.name) }
-                                )
-                            }
-                        }
-
-                        Button(onClick = { viewModel.register() }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Store Allowed Number")
-                        }
-
-                        viewModel.registerMessage?.let {
-                            Text(it)
-                        }
-
-                        Text("Stored Mobile Numbers", style = MaterialTheme.typography.titleMedium)
-                        users.forEach { user ->
-                            Text("${user.name} (${user.role.name}) - ${user.mobile}")
-                        }
-                    } else {
-                        Text(
-                            "Use an existing admin mobile number such as 9999999999 and the current setup PIN to unlock setup.",
-                            color = MaterialTheme.colorScheme.error
+                    FamilyRole.entries.forEach { role ->
+                        FilterChip(
+                            selected = viewModel.registerRole == role,
+                            onClick = { viewModel.registerRole = role },
+                            label = { Text(role.name) }
                         )
                     }
+                }
+
+                Button(
+                    onClick = { viewModel.register() },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Add Member")
+                }
+
+                viewModel.registerMessage?.let {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = Color(0xFFE8F5E9)
+                        )
+                    ) {
+                        Text(
+                            text = it,
+                            color = Color(0xFF4CAF50),
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+
+                if (users.isNotEmpty()) {
+                    Divider()
+                    Text("Stored Family Members", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    users.forEach { user ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = androidx.compose.material3.CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(user.name, fontWeight = FontWeight.Bold)
+                                    Text(user.mobile, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Text(user.role.name, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            } else {
+                Divider()
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = androidx.compose.material3.CardDefaults.cardColors(
+                        containerColor = Color(0xFFFFEBEE)
+                    )
+                ) {
+                    Text(
+                        text = "Use an existing admin mobile such as 9999999999 and PIN 2468 to unlock setup.",
+                        color = Color(0xFFE53935),
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
         }
@@ -564,33 +651,65 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
                 // Hide bottom nav when a chat thread is open so keyboard can push layout up properly
                 if (!(selectedTab == HomeTab.CHAT && viewModel.selectedChatThread != null)) {
                     NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.height(70.dp)
+                        containerColor = Color.White,
+                        tonalElevation = 8.dp,
+                        modifier = Modifier.height(64.dp)
                     ) {
+                        // Chat Tab
                         NavigationBarItem(
                             selected = selectedTab == HomeTab.CHAT,
                             onClick = { selectedTab = HomeTab.CHAT },
-                            icon = { Icon(Icons.Default.Chat, contentDescription = "Chat", modifier = Modifier.size(24.dp)) },
-                            label = { Text("💬 Chat", style = MaterialTheme.typography.labelSmall) }
+                            icon = { Icon(Icons.Default.Chat, contentDescription = "Chat", modifier = Modifier.size(22.dp)) },
+                            label = { Text("Chat", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
+                            colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF5C6BC0),
+                                selectedTextColor = Color(0xFF5C6BC0),
+                                indicatorColor = Color(0xFFE8EAF6),
+                                unselectedIconColor = Color(0xFF999999),
+                                unselectedTextColor = Color(0xFF999999)
+                            )
                         )
+                        // Events Tab
                         NavigationBarItem(
                             selected = selectedTab == HomeTab.EVENTS,
                             onClick = { selectedTab = HomeTab.EVENTS },
-                            icon = { Icon(Icons.Default.DateRange, contentDescription = "Events", modifier = Modifier.size(24.dp)) },
-                            label = { Text("🎉 Events", style = MaterialTheme.typography.labelSmall) }
+                            icon = { Icon(Icons.Default.DateRange, contentDescription = "Events", modifier = Modifier.size(22.dp)) },
+                            label = { Text("Events", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
+                            colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF5C6BC0),
+                                selectedTextColor = Color(0xFF5C6BC0),
+                                indicatorColor = Color(0xFFE8EAF6),
+                                unselectedIconColor = Color(0xFF999999),
+                                unselectedTextColor = Color(0xFF999999)
+                            )
                         )
+                        // Reminders Tab
                         NavigationBarItem(
                             selected = selectedTab == HomeTab.REMINDERS,
                             onClick = { selectedTab = HomeTab.REMINDERS },
-                            icon = { Icon(Icons.Default.Notifications, contentDescription = "Reminders", modifier = Modifier.size(24.dp)) },
-                            label = { Text("📌 Reminders", style = MaterialTheme.typography.labelSmall) }
+                            icon = { Icon(Icons.Default.Notifications, contentDescription = "Reminders", modifier = Modifier.size(22.dp)) },
+                            label = { Text("Reminders", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
+                            colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF5C6BC0),
+                                selectedTextColor = Color(0xFF5C6BC0),
+                                indicatorColor = Color(0xFFE8EAF6),
+                                unselectedIconColor = Color(0xFF999999),
+                                unselectedTextColor = Color(0xFF999999)
+                            )
                         )
+                        // Settings Tab
                         NavigationBarItem(
                             selected = selectedTab == HomeTab.SETTINGS,
                             onClick = { selectedTab = HomeTab.SETTINGS },
-                            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(24.dp)) },
-                            label = { Text("⚙️ Settings", style = MaterialTheme.typography.labelSmall) }
+                            icon = { Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(22.dp)) },
+                            label = { Text("Settings", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
+                            colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF5C6BC0),
+                                selectedTextColor = Color(0xFF5C6BC0),
+                                indicatorColor = Color(0xFFE8EAF6),
+                                unselectedIconColor = Color(0xFF999999),
+                                unselectedTextColor = Color(0xFF999999)
+                            )
                         )
                     }
                 }
@@ -1094,190 +1213,56 @@ private fun ChatScreen(
             }
 
             items(onlineUsers) { user ->
-                Card(
+                val unreadCount = viewModel.getUnreadCountForUser(user.mobile)
+                val lastMsg = viewModel.getLastMessageForUser(user.mobile)
+                val thread = userChatThreads.find {
+                    (it.participant1Mobile == viewModel.currentUser?.mobile && it.participant2Mobile == user.mobile) ||
+                    (it.participant2Mobile == viewModel.currentUser?.mobile && it.participant1Mobile == user.mobile)
+                }
+                val isUserTyping = thread?.let { typingByThread[it.threadId]?.isTyping } ?: false
+                
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { viewModel.openDirectMessage(user) },
-                    colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(24.dp),
-                    elevation = androidx.compose.material3.CardDefaults.cardElevation(
-                        defaultElevation = if (user.isOnline) 8.dp else 4.dp
-                    ),
-                    border = if (user.isOnline) 
-                        androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFE8DFFF))
-                    else 
-                        androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF0F0F0))
+                        .clickable { viewModel.openDirectMessage(user) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    Box(modifier = Modifier.size(52.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(50.dp)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            // Avatar with online badge and unread count
-                            Box(modifier = Modifier.size(64.dp)) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(64.dp)
-                                        .background(
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            shape = RoundedCornerShape(50.dp)
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Filled.AccountCircle,
-                                        contentDescription = "Avatar",
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.size(40.dp)
-                                    )
-                                }
-                                // Green online indicator at BottomEnd
-                                if (user.isOnline) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomEnd)
-                                            .size(22.dp)
-                                            .background(color = Color(0xFF4CAF50), shape = RoundedCornerShape(50.dp))
-                                            .border(width = 2.dp, color = Color.White, shape = RoundedCornerShape(50.dp)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(10.dp)
-                                                .background(color = Color.White, shape = RoundedCornerShape(50.dp))
-                                        )
-                                    }
-                                }
-                                // Red unread count badge at TopEnd
-                                val unreadCount = viewModel.getUnreadCountForUser(user.mobile)
-                                if (unreadCount > 0) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
-                                            .background(Color(0xFFE53935), RoundedCornerShape(50.dp))
-                                            .border(1.5.dp, Color.White, RoundedCornerShape(50.dp))
-                                            .padding(horizontal = 3.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            if (unreadCount > 99) "99+" else "$unreadCount",
-                                            color = Color.White,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    user.name,
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = Color(0xFF1A1A1A),
-                                    fontSize = 16.sp
-                                )
-                                Text(
-                                    user.mobile,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = Color(0xFF666666),
-                                    fontSize = 13.sp
-                                )
-                                // Last message preview
-                                val lastMsg = viewModel.getLastMessageForUser(user.mobile)
-                                if (lastMsg.isNotBlank()) {
-                                    Text(
-                                        lastMsg,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFF888888),
-                                        fontSize = 12.sp,
-                                        maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(top = 2.dp)
-                                    )
-                                }
-                                // Always show online / last-seen status row
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    modifier = Modifier.padding(top = 2.dp)
-                                ) {
-                                    // 📝 Check if user is typing (FIXED)
-                                    val thread = userChatThreads.find {
-                                        (it.participant1Mobile == viewModel.currentUser?.mobile && it.participant2Mobile == user.mobile) ||
-                                        (it.participant2Mobile == viewModel.currentUser?.mobile && it.participant1Mobile == user.mobile)
-                                    }
-                                    
-                                    val typingStatus = thread?.let { typingByThread[it.threadId] }
-                                    val isUserTyping = typingStatus != null && typingStatus.isTyping
-                                    
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .background(
-                                                color = when {
-                                                    isUserTyping -> Color(0xFF6C63FF) // Purple for typing
-                                                    user.isOnline -> Color(0xFF4CAF50)
-                                                    else -> Color(0xFF999999)
-                                                },
-                                                shape = RoundedCornerShape(50.dp)
-                                            )
-                                    )
-                                    // Show "User is typing...", "Active now" or "Last seen"
-                                    Text(
-                                        when {
-                                            isUserTyping -> "${typingStatus?.userName} is typing..."
-                                            user.isOnline -> "Active now"
-                                            else -> viewModel.formatLastSeen(user.lastSeen).ifBlank { "Offline" }
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = when {
-                                            isUserTyping -> Color(0xFF6C63FF) // Purple for typing
-                                            user.isOnline -> Color(0xFF4CAF50)
-                                            else -> Color(0xFF999999)
-                                        },
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 11.sp
-                                    )
-                                }
-                            }
+                            Icon(Icons.Filled.AccountCircle, contentDescription = "Avatar", tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(32.dp))
                         }
-                        // Right side: show unread count pill if there are unread messages
-                        val rightUnreadCount = viewModel.getUnreadCountForUser(user.mobile)
-                        if (rightUnreadCount > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .defaultMinSize(minWidth = 28.dp, minHeight = 28.dp)
-                                    .background(Color(0xFFE53935), RoundedCornerShape(14.dp))
-                                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    if (rightUnreadCount > 99) "99+" else "$rightUnreadCount",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                        if (user.isOnline) {
+                            Box(modifier = Modifier.align(Alignment.BottomEnd).size(12.dp).background(Color(0xFF4CAF50), CircleShape).border(2.dp, Color.White, CircleShape))
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(user.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onBackground)
+                            Text(if (user.isOnline) "now" else viewModel.formatLastSeen(user.lastSeen).ifBlank { "offline" }, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (isUserTyping) "typing..." else lastMsg, fontSize = 14.sp, color = if (unreadCount > 0 || isUserTyping) {
+                                if (isUserTyping) Color(0xFF6C63FF) else MaterialTheme.colorScheme.onBackground
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), fontWeight = if (isUserTyping) FontWeight.Bold else FontWeight.Normal)
+                            if (unreadCount > 0) {
+                                Box(modifier = Modifier.background(Color(0xFFE53935), RoundedCornerShape(50.dp)).padding(horizontal = 8.dp, vertical = 2.dp), contentAlignment = Alignment.Center) {
+                                    Text(if (unreadCount > 99) "99+" else unreadCount.toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
-                        } else if (user.isOnline) {
-                            Icon(
-                                Icons.Filled.CheckCircle,
-                                contentDescription = "Online",
-                                tint = Color(0xFF4CAF50),
-                                modifier = Modifier.size(24.dp)
-                            )
                         }
                     }
                 }
+                Divider(modifier = Modifier.padding(start = 80.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
             }
         }
     } else {
@@ -1286,113 +1271,105 @@ private fun ChatScreen(
             .fillMaxSize()
             .imePadding()
         ) {
-            // Chat header - Clean and professional
+            // Chat header - Modern & balanced with better spacing
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp, 12.dp, 12.dp, 0.dp),
+                    .padding(12.dp, 12.dp, 12.dp, 8.dp),
                 color = Color.White,
-                shape = RoundedCornerShape(16.dp),
-                shadowElevation = 6.dp
+                shape = RoundedCornerShape(14.dp),
+                shadowElevation = 4.dp
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    // User info section
                     Row(
                         modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(50.dp)
-                                .background(
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                    shape = RoundedCornerShape(50.dp)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Filled.AccountCircle,
-                                contentDescription = "User",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(30.dp)
-                            )
+                        // Avatar with online indicator
+                        Box(modifier = Modifier.size(48.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(Color(0xFFE8EAF6), RoundedCornerShape(50.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Filled.AccountCircle,
+                                    contentDescription = "User",
+                                    tint = Color(0xFF5C6BC0),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                            Box(modifier = Modifier.align(Alignment.BottomEnd).size(12.dp).background(Color(0xFF4CAF50), CircleShape).border(2.dp, Color.White, CircleShape))
                         }
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        
+                        // Name and status
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(
                                 if (selectedThread.participant1Mobile == viewModel.currentUser?.mobile)
                                     selectedThread.participant2Name
                                 else
                                     selectedThread.participant1Name,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Color(0xFF333333),
-                                fontSize = 18.sp
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color(0xFF1A1A1A),
+                                fontSize = 16.sp
                             )
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .background(color = Color(0xFF4CAF50), shape = RoundedCornerShape(50.dp))
-                                )
-                                Text(
-                                    "Online",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color(0xFF4CAF50),
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
+                            Text(
+                                "Online",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF4CAF50),
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 11.sp
+                            )
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    
+                    // Action buttons - cleaner arrangement
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
-                            onClick = {
-                                onStartAudioCall()
-                            },
-                            modifier = Modifier.size(46.dp),
+                            onClick = { onStartAudioCall() },
+                            modifier = Modifier.size(44.dp),
                             shape = RoundedCornerShape(50.dp),
                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFF6C63FF)
                             ),
                             contentPadding = PaddingValues(0.dp),
-                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
-                                defaultElevation = 3.dp
-                            )
+                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                         ) {
-                            Icon(Icons.Filled.Call, contentDescription = "Audio Call", tint = Color.White, modifier = Modifier.size(22.dp))
+                            Icon(Icons.Filled.Call, contentDescription = "Audio Call", tint = Color.White, modifier = Modifier.size(20.dp))
                         }
                         Button(
                             onClick = { onStartVideoCall() },
-                            modifier = Modifier.size(46.dp),
+                            modifier = Modifier.size(44.dp),
                             shape = RoundedCornerShape(50.dp),
                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFF5B9EFF)
                             ),
                             contentPadding = PaddingValues(0.dp),
-                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
-                                defaultElevation = 3.dp
-                            )
+                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                         ) {
-                            Icon(Icons.Filled.VideoCall, contentDescription = "Video Call", tint = Color.White, modifier = Modifier.size(22.dp))
+                            Icon(Icons.Filled.VideoCall, contentDescription = "Video Call", tint = Color.White, modifier = Modifier.size(20.dp))
                         }
                         Button(
                             onClick = { viewModel.clearSelectedThread() },
-                            modifier = Modifier.size(46.dp),
+                            modifier = Modifier.size(44.dp),
                             shape = RoundedCornerShape(50.dp),
                             colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF00C853)
+                                containerColor = Color(0xFF9C27B0).copy(alpha = 0.8f)
                             ),
                             contentPadding = PaddingValues(0.dp),
-                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(
-                                defaultElevation = 3.dp
-                            )
+                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                         ) {
-                            Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(22.dp))
+                            Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.White, modifier = Modifier.size(20.dp))
                         }
                     }
                 }
@@ -1403,9 +1380,9 @@ private fun ChatScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(12.dp)
-                    .background(MaterialTheme.colorScheme.background),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .background(Color(0xFFFAFAFA)),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
                 reverseLayout = false,
                 state = listState
             ) {
@@ -1414,26 +1391,27 @@ private fun ChatScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
                         horizontalAlignment = if (isCurrentUser) Alignment.End else Alignment.Start
                     ) {
                         if (!isCurrentUser) {
                             Column(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                                verticalArrangement = Arrangement.spacedBy(0.dp)
                             ) {
                                 Text(
                                     message.senderName,
                                     fontWeight = FontWeight.SemiBold,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = Color(0xFF5C6BC0),
+                                    fontSize = 12.sp
                                 )
                                 Text(
                                     message.senderMobile,
                                     fontWeight = FontWeight.Normal,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.sp
+                                    color = Color(0xFF999999),
+                                    fontSize = 10.sp
                                 )
                             }
                         }
@@ -1451,34 +1429,34 @@ private fun ChatScreen(
                                 },
                             colors = androidx.compose.material3.CardDefaults.cardColors(
                                 containerColor = if (isCurrentUser)
-                                    MaterialTheme.colorScheme.primary
+                                    Color(0xFF5C6BC0)
                                 else
-                                    MaterialTheme.colorScheme.surfaceVariant
+                                    Color(0xFFF1F1F1)
                             ),
                             shape = RoundedCornerShape(
-                                topStart = 18.dp,
-                                topEnd = 18.dp,
-                                bottomStart = if (isCurrentUser) 18.dp else 2.dp,
-                                bottomEnd = if (isCurrentUser) 2.dp else 18.dp
+                                topStart = 16.dp,
+                                topEnd = 16.dp,
+                                bottomStart = if (isCurrentUser) 16.dp else 4.dp,
+                                bottomEnd = if (isCurrentUser) 4.dp else 16.dp
                             ),
                             elevation = androidx.compose.material3.CardDefaults.cardElevation(
-                                defaultElevation = 4.dp
+                                defaultElevation = 2.dp
                             )
                         ) {
                             Column(
                                 modifier = Modifier.padding(
-                                    horizontal = if (isCurrentUser) 14.dp else 12.dp,
-                                    vertical = if (isCurrentUser) 12.dp else 10.dp
+                                    horizontal = 12.dp,
+                                    vertical = 10.dp
                                 ),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                verticalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
                                 if (!message.replyToBody.isNullOrBlank()) {
                                     Surface(
                                         shape = RoundedCornerShape(10.dp),
                                         color = if (isCurrentUser)
-                                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.18f)
+                                            Color.White.copy(alpha = 0.15f)
                                         else
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                                            Color(0xFF5C6BC0).copy(alpha = 0.1f)
                                     ) {
                                         Column(
                                             modifier = Modifier
@@ -1491,9 +1469,9 @@ private fun ChatScreen(
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = if (isCurrentUser)
-                                                    MaterialTheme.colorScheme.onPrimary
+                                                    Color.White.copy(alpha = 0.85f)
                                                 else
-                                                    MaterialTheme.colorScheme.primary
+                                                    Color(0xFF5C6BC0)
                                             )
                                             Text(
                                                 text = message.replyToBody.orEmpty(),
@@ -1501,9 +1479,9 @@ private fun ChatScreen(
                                                 maxLines = 2,
                                                 overflow = TextOverflow.Ellipsis,
                                                 color = if (isCurrentUser)
-                                                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
+                                                    Color.White.copy(alpha = 0.7f)
                                                 else
-                                                    Color(0xFF1A1A1A)
+                                                    Color(0xFF1A1A1A).copy(alpha = 0.7f)
                                             )
                                         }
                                     }
@@ -1514,9 +1492,9 @@ private fun ChatScreen(
                                         Color.White
                                     else
                                         Color(0xFF1A1A1A),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontSize = 17.sp,
-                                    lineHeight = 23.sp
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontSize = 15.sp,
+                                    lineHeight = 21.sp
                                 )
                                 if (!message.mediaUri.isNullOrEmpty()) {
                                     Box(
@@ -1528,9 +1506,9 @@ private fun ChatScreen(
                                             }
                                             .background(
                                                 color = if (isCurrentUser)
-                                                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f)
+                                                    Color.White.copy(alpha = 0.15f)
                                                 else
-                                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                                    Color(0xFF5C6BC0).copy(alpha = 0.1f),
                                                 shape = RoundedCornerShape(10.dp)
                                             )
                                             .padding(10.dp),
@@ -1543,13 +1521,13 @@ private fun ChatScreen(
                                             Icon(
                                                 if (message.body.contains("image", ignoreCase = true)) Icons.Filled.PermMedia else Icons.Filled.AttachFile,
                                                 contentDescription = "Media",
-                                                tint = if (isCurrentUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                                                tint = if (isCurrentUser) Color.White else Color(0xFF5C6BC0),
                                                 modifier = Modifier.size(18.dp)
                                             )
                                             Text(
                                                 if (message.body.contains("image", ignoreCase = true)) "View Image" else "View Document",
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = if (isCurrentUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                                                color = if (isCurrentUser) Color.White else Color(0xFF5C6BC0),
                                                 fontWeight = FontWeight.Medium
                                             )
                                         }
@@ -1563,35 +1541,38 @@ private fun ChatScreen(
                                         viewModel.formatTime(message.timestamp),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (isCurrentUser)
-                                            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                                            Color.White.copy(alpha = 0.65f)
                                         else
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                                            Color(0xFF999999).copy(alpha = 0.75f),
+                                        fontSize = 10.sp
                                     )
                                     if (!message.senderLocation.isNullOrBlank()) {
                                         Text(
                                             "•",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = if (isCurrentUser)
-                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
+                                                Color.White.copy(alpha = 0.5f)
                                             else
-                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                                                Color(0xFF999999).copy(alpha = 0.5f),
+                                            fontSize = 8.sp
                                         )
                                         Icon(
                                             Icons.Filled.LocationOn,
                                             contentDescription = null,
-                                            modifier = Modifier.size(10.dp),
+                                            modifier = Modifier.size(9.dp),
                                             tint = if (isCurrentUser)
-                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                                                Color.White.copy(alpha = 0.65f)
                                             else
-                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                                                Color(0xFF999999).copy(alpha = 0.75f)
                                         )
                                         Text(
                                             message.senderLocation,
                                             style = MaterialTheme.typography.labelSmall,
                                             color = if (isCurrentUser)
-                                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                                                Color.White.copy(alpha = 0.65f)
                                             else
-                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                                                Color(0xFF999999).copy(alpha = 0.75f),
+                                            fontSize = 10.sp
                                         )
                                     }
                                     // 🔵 Read Receipt Ticks - WhatsApp style
@@ -1604,18 +1585,18 @@ private fun ChatScreen(
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = Color(0xFF00B4D8),
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 10.sp,
-                                                letterSpacing = (-1).sp
+                                                fontSize = 9.sp,
+                                                letterSpacing = (-0.8).sp
                                             )
                                         } else {
                                             // ⚫ Black double tick for sent
                                             Text(
                                                 "✔✔",
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f),
+                                                color = Color.White.copy(alpha = 0.6f),
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 10.sp,
-                                                letterSpacing = (-1).sp
+                                                fontSize = 9.sp,
+                                                letterSpacing = (-0.8).sp
                                             )
                                         }
                                     }
@@ -1626,31 +1607,34 @@ private fun ChatScreen(
                 }
             }
 
-            // 📝 Typing Indicator - Show when other users are typing
+            // 📝 Typing Indicator - Modern WhatsApp style
             if (typingUsers.isNotEmpty()) {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.background),
+                        .background(Color(0xFFFAFAFA)),
                     color = Color.Transparent
                 ) {
-                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             val typingText = if (typingUsers.size == 1) {
-                                "✏️ ${typingUsers[0].userName} is typing..."
+                                "${typingUsers[0].userName} is typing"
                             } else {
-                                "✏️ ${typingUsers.size} people are typing..."
+                                "${typingUsers.size} people are typing"
                             }
                             Text(
                                 typingText,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF6C63FF),
-                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                color = Color(0xFF5C6BC0),
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                fontSize = 13.sp
                             )
+                            // Animated dots
+                            Text("•••", style = MaterialTheme.typography.bodySmall, color = Color(0xFF5C6BC0), fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1714,8 +1698,8 @@ private fun ChatScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                .padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1725,17 +1709,17 @@ private fun ChatScreen(
                                         showAttachActions = false
                                     },
                                     modifier = Modifier
-                                        .size(40.dp)
+                                        .size(44.dp)
                                         .background(Color(0xFF5B9EFF), shape = RoundedCornerShape(12.dp))
                                 ) {
                                     Icon(
                                         Icons.Filled.Camera,
                                         contentDescription = "Gallery",
                                         tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
-                                Text("Pic", style = MaterialTheme.typography.labelSmall, color = Color(0xFF5B9EFF))
+                                Text("Photo", style = MaterialTheme.typography.labelSmall, color = Color(0xFF5B9EFF), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 IconButton(
@@ -1744,17 +1728,17 @@ private fun ChatScreen(
                                         showAttachActions = false
                                     },
                                     modifier = Modifier
-                                        .size(40.dp)
-                                        .background(Color(0xFF00C853), shape = RoundedCornerShape(12.dp))
+                                        .size(44.dp)
+                                        .background(Color(0xFF4CAF50), shape = RoundedCornerShape(12.dp))
                                 ) {
                                     Icon(
                                         Icons.Filled.AttachFile,
                                         contentDescription = "Document",
                                         tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
-                                Text("Doc", style = MaterialTheme.typography.labelSmall, color = Color(0xFF00A845))
+                                Text("File", style = MaterialTheme.typography.labelSmall, color = Color(0xFF4CAF50), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 IconButton(
@@ -1763,7 +1747,7 @@ private fun ChatScreen(
                                         showAttachActions = false
                                     },
                                     modifier = Modifier
-                                        .size(40.dp)
+                                        .size(44.dp)
                                         .background(
                                             if (showEmojiPicker) Color(0xFFFFA500) else Color(0xFFFFB300),
                                             shape = RoundedCornerShape(12.dp)
@@ -1773,10 +1757,10 @@ private fun ChatScreen(
                                         Icons.Filled.EmojiEmotions,
                                         contentDescription = "Emoji",
                                         tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
-                                Text("Smile", style = MaterialTheme.typography.labelSmall, color = Color(0xFFCC8A00))
+                                Text("Emoji", style = MaterialTheme.typography.labelSmall, color = Color(0xFFCC8A00), fontSize = 11.sp, fontWeight = FontWeight.Medium)
                             }
                         }
                     }
@@ -1793,16 +1777,16 @@ private fun ChatScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState())
-                                .padding(bottom = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                .padding(bottom = 8.dp, start = 4.dp, end = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             emojiList.forEach { emoji ->
                                 TextButton(
                                     onClick = { messageBody += emoji; showEmojiPicker = false },
-                                    contentPadding = PaddingValues(4.dp),
+                                    contentPadding = PaddingValues(2.dp),
                                     modifier = Modifier.size(36.dp)
-                                ) { Text(emoji, fontSize = 18.sp) }
+                                ) { Text(emoji, fontSize = 20.sp) }
                             }
                         }
                     }
@@ -1819,38 +1803,62 @@ private fun ChatScreen(
                     }
                     // Single input row: [attach] [textfield] [send]
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // Attach button - Modern minimal style
                         IconButton(
                             onClick = { showAttachActions = !showAttachActions },
-                            modifier = Modifier.size(40.dp).background(
-                                if (showAttachActions) Color(0xFFFFA500) else Color(0xFF00C853),
-                                shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(
+                                    if (showAttachActions) Color(0xFFFFB300) else Color(0xFFE8EAF6),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                        ) {
+                            Icon(
+                                Icons.Filled.AttachFile,
+                                contentDescription = "Attach",
+                                tint = if (showAttachActions) Color.White else Color(0xFF5C6BC0),
+                                modifier = Modifier.size(20.dp)
                             )
-                        ) { Icon(Icons.Filled.AttachFile, contentDescription = "Attach", tint = Color.White, modifier = Modifier.size(20.dp)) }
+                        }
+                        
+                        // Message input field - Clean modern design
                         OutlinedTextField(
                             messageBody,
                             { 
                                 messageBody = it
-                                // 📝 Notify typing when user types (with debounce)
                                 if (messageBody.isNotBlank()) {
                                     viewModel.onTextChanged()
                                 }
                             },
-                            placeholder = { Text("Type a message...", style = MaterialTheme.typography.bodyMedium, color = Color(0xFFAAAAAA)) },
-                            modifier = Modifier.weight(1f).heightIn(min = 42.dp),
-                            shape = RoundedCornerShape(22.dp),
-                            textStyle = MaterialTheme.typography.bodyMedium,
+                            placeholder = {
+                                Text(
+                                    "Type a message...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color(0xFFBBBBBB)
+                                )
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 40.dp, max = 100.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp),
                             maxLines = 4,
                             colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                                 unfocusedBorderColor = Color(0xFFE0E0E0),
                                 focusedBorderColor = Color(0xFF6C63FF),
-                                unfocusedContainerColor = Color(0xFFF5F5F5),
-                                focusedContainerColor = Color(0xFFF5F5F5)
+                                unfocusedContainerColor = Color(0xFFFAFAFA),
+                                focusedContainerColor = Color(0xFFFAFAFA),
+                                cursorColor = Color(0xFF5C6BC0)
                             )
                         )
+                        
+                        // Send button - Modern FAB style
                         Button(
                             onClick = {
                                 if (messageBody.isNotBlank()) {
@@ -1861,12 +1869,23 @@ private fun ChatScreen(
                                     showEmojiPicker = false
                                 }
                             },
-                            modifier = Modifier.size(46.dp),
+                            enabled = messageBody.isNotBlank(),
+                            modifier = Modifier.size(40.dp),
                             shape = RoundedCornerShape(50.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF)),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF5C6BC0),
+                                disabledContainerColor = Color(0xFFCCCCCC)
+                            ),
                             contentPadding = PaddingValues(0.dp),
-                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
-                        ) { Icon(Icons.Filled.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(22.dp)) }
+                            elevation = androidx.compose.material3.ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Send,
+                                contentDescription = "Send",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -2587,136 +2606,171 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
     var reminderTitle by remember { mutableStateOf("") }
     var reminderDetails by remember { mutableStateOf("") }
     var assignedTo by remember { mutableStateOf(mutableListOf<String>()) }
+    var reminderMinutes by remember { mutableStateOf(30) }
+    var showAssignSheet by remember { mutableStateOf(false) }
+
+    if (showAssignSheet) {
+        AssignRemindersBottomSheet(
+            allowedUsers = allowedUsers,
+            selectedMembers = assignedTo.toSet(),
+            viewModel = viewModel,
+            onMembersSelected = { assignedTo = it.toMutableList() },
+            onDismiss = { showAssignSheet = false }
+        )
+    }
 
     if (showCreateReminder) {
         Dialog(
             onDismissRequest = { showCreateReminder = false },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            Surface(
+            Card(
                 modifier = Modifier
                     .fillMaxWidth(0.95f)
-                    .heightIn(max = 600.dp)
-                    .background(MaterialTheme.colorScheme.background),
+                    .padding(horizontal = 12.dp)
+                    .verticalScroll(rememberScrollState()),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // 🎨 HEADER SECTION - Non-scrollable
-                    Column(
+                    // Header
+                    Text(
+                        "Create Reminder 📌",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color(0xFF1A1A1A)
+                    )
+
+                    // Title
+                    OutlinedTextField(
+                        value = reminderTitle,
+                        onValueChange = { reminderTitle = it },
+                        label = { Text("Reminder Title") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF5C6BC0)) }
+                    )
+
+                    // Details
+                    OutlinedTextField(
+                        value = reminderDetails,
+                        onValueChange = { reminderDetails = it },
+                        label = { Text("Details (optional)") },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Text("📌 Create New Reminder", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                        
-                        OutlinedTextField(
-                            value = reminderTitle,
-                            onValueChange = { reminderTitle = it },
-                            label = { Text("Reminder Title") },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            singleLine = true
-                        )
-                        
-                        OutlinedTextField(
-                            value = reminderDetails,
-                            onValueChange = { reminderDetails = it },
-                            label = { Text("Details") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(100.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            maxLines = 3
-                        )
-                    }
-                    
-                    // 🎨 DIVIDER
-                    Divider()
-                    
-                    // 🎨 SCROLLABLE MEMBERS SECTION
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 24.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text("Assign to family members:", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        
-                        // 🔧 MEMBER CHIPS - Direct checkbox only, no nested clickables
-                        allowedUsers.forEach { user ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(
-                                        2.dp,
-                                        if (user.mobile in assignedTo) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                        RoundedCornerShape(12.dp)
-                                    ),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = androidx.compose.material3.CardDefaults.cardColors(
-                                    containerColor = if (user.mobile in assignedTo) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                                )
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp)
-                                ) {
-                                    // ✅ CRITICAL: Create NEW list instead of mutating
-                                    // This ensures Compose detects the state change and recomposes immediately
-                                    androidx.compose.material3.Checkbox(
-                                        checked = user.mobile in assignedTo,
-                                        onCheckedChange = { isChecked ->
-                                            assignedTo = if (isChecked) {
-                                                (assignedTo + user.mobile).toMutableList()
-                                            } else {
-                                                (assignedTo - user.mobile).toMutableList()
-                                            }
-                                        },
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(user.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                                        Text(user.mobile, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    // 🎨 FOOTER SECTION - Buttons
-                    Row(
+                            .height(70.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        maxLines = 3
+                    )
+
+                    // Assign Members Button
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFF0F0F0))
+                            .clickable { showAssignSheet = true }
+                            .padding(12.dp),
+                        color = Color.Transparent
                     ) {
-                        TextButton(onClick = { showCreateReminder = false }, modifier = Modifier.weight(1f)) {
-                            Text("Cancel")
-                        }
-                        Button(
-                            onClick = {
-                                if (reminderTitle.isNotBlank()) {
-                                    viewModel.addReminder(reminderTitle, reminderDetails, assignedTo.toList())
-                                    reminderTitle = ""
-                                    reminderDetails = ""
-                                    assignedTo = mutableListOf()  // ✅ Reset state properly
-                                    showCreateReminder = false
-                                    Toast.makeText(context, "Reminder created!", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Create")
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = Color(0xFF5C6BC0),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    "Assign Members",
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF1A1A1A),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = Color(0xFF666666),
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
+                    }
+
+                    // Show selected members
+                    if (assignedTo.isNotEmpty()) {
+                        val assignedNames = allowedUsers
+                            .filter { it.mobile in assignedTo }
+                            .map { it.name }
+                            .joinToString(", ")
+                        Text(
+                            "✓ $assignedNames",
+                            fontSize = 11.sp,
+                            color = Color(0xFF4CAF50),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    // Reminder Time Dropdown
+                    ReminderTimeDropdown(
+                        selectedMinutes = reminderMinutes,
+                        onReminderSelected = { reminderMinutes = it }
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // Create Button
+                    Button(
+                        onClick = {
+                            if (reminderTitle.isBlank()) {
+                                Toast.makeText(context, "Please enter reminder title", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+
+                            viewModel.addReminder(reminderTitle, reminderDetails, assignedTo.toList())
+                            reminderTitle = ""
+                            reminderDetails = ""
+                            assignedTo = mutableListOf()
+                            reminderMinutes = 30
+                            showCreateReminder = false
+                            Toast.makeText(context, "Reminder created!", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF5C6BC0)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Create Reminder", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                    }
+
+                    // Cancel Button
+                    OutlinedButton(
+                        onClick = { showCreateReminder = false },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp),
+                        border = BorderStroke(1.dp, Color(0xFFDDDDDD)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Cancel", color = Color(0xFF666666), fontSize = 15.sp)
                     }
                 }
             }
@@ -2724,28 +2778,36 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
     }
     
     Column(modifier = Modifier.fillMaxSize()) {
-        // Header with create button
+        // Header - Clean and modern
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = MaterialTheme.colorScheme.primaryContainer,
-            shadowElevation = 4.dp
+            color = Color.White,
+            shadowElevation = 2.dp
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(14.dp, 12.dp, 14.dp, 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text("📌 Reminders", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Text("Manage family reminders", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
-                }
-                Button(
+                Text(
+                    "Reminders",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF1A1A1A),
+                    fontSize = 22.sp
+                )
+                IconButton(
                     onClick = { showCreateReminder = true },
-                    shape = RoundedCornerShape(12.dp)
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    Text("+ New")
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Add Reminder",
+                        tint = Color(0xFF5C6BC0),
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
             }
         }
@@ -2762,20 +2824,21 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
                 Icon(
                     Icons.Default.Notifications,
                     contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    modifier = Modifier.size(60.dp),
+                    tint = Color(0xFFCCCCCC)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     "No reminders yet",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color(0xFF666666),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     "Create a reminder for your family",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF999999),
                     textAlign = TextAlign.Center
                 )
             }
@@ -2784,8 +2847,8 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(reminders) { reminder ->
@@ -2805,6 +2868,218 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
     }
 }
 
+// NEW COMPOSABLES FOR MODERN REMINDERS
+
+@Composable
+private fun ReminderTimeDropdown(
+    selectedMinutes: Int,
+    onReminderSelected: (Int) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val reminderOptions = listOf(
+        Pair(10, "10 minutes"),
+        Pair(30, "30 minutes"),
+        Pair(60, "1 hour"),
+        Pair(1440, "1 day"),
+        Pair(2880, "2 days")
+    )
+
+    val selectedLabel = reminderOptions.find { it.first == selectedMinutes }?.second ?: "30 minutes"
+
+    Box {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFFF0F0F0))
+                .clickable { expanded = true }
+                .padding(12.dp),
+            color = Color.Transparent
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Schedule,
+                        contentDescription = null,
+                        tint = Color(0xFF5C6BC0),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        "Remind in: $selectedLabel",
+                        fontSize = 13.sp,
+                        color = Color(0xFF1A1A1A),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Icon(
+                    Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = Color(0xFF666666),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.fillMaxWidth(0.9f)
+        ) {
+            reminderOptions.forEach { (minutes, label) ->
+                DropdownMenuItem(
+                    text = { Text(label, fontSize = 13.sp) },
+                    onClick = {
+                        onReminderSelected(minutes)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AssignRemindersBottomSheet(
+    allowedUsers: List<AllowedUser>,
+    selectedMembers: Set<String>,
+    viewModel: FamilyViewModel,
+    onMembersSelected: (Set<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var members by remember { mutableStateOf(selectedMembers) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    // Filter out current user
+    val otherUsers = allowedUsers.filter { it.mobile != viewModel.currentUser?.mobile }
+    val filteredUsers = if (searchQuery.isEmpty()) {
+        otherUsers
+    } else {
+        otherUsers.filter { it.name.contains(searchQuery, ignoreCase = true) || it.mobile.contains(searchQuery) }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        scrimColor = Color.Black.copy(alpha = 0.3f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header
+            Text(
+                "Assign to Members",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1A1A1A)
+            )
+
+            // Search
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Search members...", fontSize = 12.sp) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF5C6BC0)) },
+                singleLine = true
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Members list
+            if (filteredUsers.isEmpty()) {
+                Text(
+                    "No family members available",
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999),
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(filteredUsers) { user ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFFAFAFA), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    members = if (user.mobile in members) {
+                                        members - user.mobile
+                                    } else {
+                                        members + user.mobile
+                                    }
+                                }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    user.name,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF1A1A1A)
+                                )
+                                Text(
+                                    user.mobile,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF999999)
+                                )
+                            }
+                            Checkbox(
+                                checked = user.mobile in members,
+                                onCheckedChange = {
+                                    members = if (user.mobile in members) {
+                                        members - user.mobile
+                                    } else {
+                                        members + user.mobile
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Done button
+            Button(
+                onClick = {
+                    onMembersSelected(members)
+                    onDismiss()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5C6BC0)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    "Done (${members.size})",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun ReminderCard(
     reminder: com.familyconnect.app.data.model.ReminderItem,
@@ -2814,200 +3089,213 @@ private fun ReminderCard(
     onDelete: () -> Unit,
     onSnooze: (Int) -> Unit
 ) {
-    var showSnoozeOptions by remember { mutableStateOf(false) }
-    
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = if (reminder.completed) 
-                MaterialTheme.colorScheme.surfaceVariant 
-            else 
-                MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(16.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color.White),
+        shape = RoundedCornerShape(14.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Header with title and completion status
+            // Title row with checkbox
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (reminder.completed) {
-                            Icon(
-                                Icons.Filled.CheckCircle,
-                                contentDescription = "Completed",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
-                            )
-                        }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    // Checkbox for completion
+                    androidx.compose.material3.Checkbox(
+                        checked = reminder.completed,
+                        onCheckedChange = { onComplete() },
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             reminder.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            textDecoration = if (reminder.completed) androidx.compose.ui.text.style.TextDecoration.LineThrough else androidx.compose.ui.text.style.TextDecoration.None
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            color = Color(0xFF1A1A1A),
+                            textDecoration = if (reminder.completed) androidx.compose.ui.text.style.TextDecoration.LineThrough else androidx.compose.ui.text.style.TextDecoration.None,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
-            
-            // Details
+
+            // Description (if exists)
             if (reminder.details.isNotBlank()) {
                 Text(
                     reminder.details,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                        .padding(12.dp)
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF666666),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-            
-            // Creator info
-            Text(
-                "Created by $creatorName",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            
-            // Assigned members
+
+            // Assigned info
             if (assignedUserNames.isNotEmpty()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("👥 Assigned to:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                    assignedUserNames.forEach { name ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.heightIn(max = 24.dp)
-                        ) {
-                            Text(
-                                name,
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
+                    Text(
+                        "Assigned to →",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF999999),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        assignedUserNames.joinToString(", "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF5C6BC0),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
-            
-            // Snooze time if snoozed
-            if (reminder.lastSnoozedUntil != null) {
+
+            // Created by (if exists and different from assigned)
+            if (creatorName.isNotBlank() && creatorName != assignedUserNames.firstOrNull()) {
                 Text(
-                    "⏱️ Snoozed until ${java.text.SimpleDateFormat("HH:mm").format(java.util.Date(reminder.lastSnoozedUntil))}",
+                    "Created by → $creatorName",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFFF9800)
+                    color = Color(0xFF999999),
+                    fontSize = 10.sp
                 )
             }
-            
-            // Snooze options or action buttons
-            if (showSnoozeOptions) {
-                Text("Snooze for:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+
+            // Snoozed time indicator (if snoozed)
+            if (reminder.lastSnoozedUntil != null) {
+                Text(
+                    "⏱ Snoozed until ${java.text.SimpleDateFormat("HH:mm").format(java.util.Date(reminder.lastSnoozedUntil))}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFFFA500),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            // Actions row - Snooze dropdown + small icon buttons
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+            ) {
+                // Snooze dropdown
+                SnoozeDropdown(onSnooze = onSnooze)
+
+                // Action icons (right-aligned)
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    reminder.snoozeOptions.forEach { minutes ->
-                        OutlinedButton(
-                            onClick = { 
-                                onSnooze(minutes)
-                                showSnoozeOptions = false
-                            },
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.heightIn(max = 36.dp)
-                        ) {
-                            Text(
-                                when (minutes) {
-                                    5 -> "5 min"
-                                    15 -> "15 min"
-                                    30 -> "30 min"
-                                    60 -> "1 hr"
-                                    1440 -> "1 day"
-                                    else -> "$minutes min"
-                                },
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
+                    // Complete button - small icon
+                    IconButton(
+                        onClick = onComplete,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = "Complete",
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    // Delete button - small icon
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = Color(0xFFE53935),
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
             }
-            
-            // Action buttons
+        }
+    }
+}
+
+@Composable
+private fun SnoozeDropdown(onSnooze: (Int) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        Surface(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFFF0F0F0))
+                .clickable { expanded = true }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            color = Color.Transparent
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (!reminder.completed) {
-                    OutlinedButton(
-                        onClick = { showSnoozeOptions = !showSnoozeOptions },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(40.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color(0xFFFF9800)
+                Icon(
+                    Icons.Default.Schedule,
+                    contentDescription = null,
+                    tint = Color(0xFF5C6BC0),
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    "Snooze",
+                    fontSize = 12.sp,
+                    color = Color(0xFF1A1A1A),
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(Color.White)
+        ) {
+            listOf(5, 15, 30, 60, 1440).forEach { minutes ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            when (minutes) {
+                                5 -> "5 minutes"
+                                15 -> "15 minutes"
+                                30 -> "30 minutes"
+                                60 -> "1 hour"
+                                1440 -> "1 day"
+                                else -> "$minutes minutes"
+                            },
+                            fontSize = 13.sp
                         )
-                    ) {
-                        Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Snooze", style = MaterialTheme.typography.labelSmall)
+                    },
+                    onClick = {
+                        onSnooze(minutes)
+                        expanded = false
                     }
-                }
-                
-                Button(
-                    onClick = onComplete,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = if (reminder.completed) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(if (reminder.completed) "Completed" else "Complete", style = MaterialTheme.typography.labelSmall)
-                }
-                
-                OutlinedButton(
-                    onClick = onDelete,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error)
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Delete", style = MaterialTheme.typography.labelSmall)
-                }
+                )
             }
         }
     }
@@ -3020,7 +3308,17 @@ private fun SettingsScreen(viewModel: FamilyViewModel, role: FamilyRole) {
     val currentUser = viewModel.currentUser
     var showMemberManagement by remember { mutableStateOf(false) }
     var showAdminSetup by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
     
+    if (showLogoutDialog) {
+        LogoutConfirmationDialog(
+            onConfirm = {
+                viewModel.logout()
+                showLogoutDialog = false
+            },
+            onCancel = { showLogoutDialog = false }
+        )
+    }
     if (showMemberManagement) {
         MemberManagementScreen(viewModel, onBack = { showMemberManagement = false })
     } else if (showAdminSetup) {
@@ -3139,16 +3437,20 @@ private fun SettingsScreen(viewModel: FamilyViewModel, role: FamilyRole) {
                         )
                         Divider(modifier = Modifier.padding(vertical = 8.dp))
                     }
+                    
+                    // Modern Logout Button
                     Button(
-                        onClick = { viewModel.logout() },
+                        onClick = { showLogoutDialog = true },
                         modifier = Modifier.fillMaxWidth(),
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFD32F2F)
-                        )
+                            containerColor = Color(0xFFFFEBEE),
+                            contentColor = Color(0xFFD32F2F)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Icon(Icons.Filled.Logout, contentDescription = "Logout", modifier = Modifier.size(20.dp))
+                        Icon(Icons.Filled.Logout, contentDescription = "Logout", modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Logout")
+                        Text("Logout", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     }
                 }
             }
@@ -3156,6 +3458,69 @@ private fun SettingsScreen(viewModel: FamilyViewModel, role: FamilyRole) {
             Spacer(modifier = Modifier.height(20.dp))
         }
     }
+}
+
+// Logout Confirmation Dialog
+@Composable
+private fun LogoutConfirmationDialog(
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        icon = {
+            Icon(
+                Icons.Filled.Logout,
+                contentDescription = null,
+                tint = Color(0xFFD32F2F),
+                modifier = Modifier.size(32.dp)
+            )
+        },
+        title = {
+            Text(
+                "Logout?",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1A1A1A)
+            )
+        },
+        text = {
+            Text(
+                "You will be logged out of your Family Connect account. You can log back in anytime.",
+                fontSize = 14.sp,
+                color = Color(0xFF666666),
+                lineHeight = 20.sp
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                modifier = Modifier.padding(8.dp)
+            ) {
+                Text(
+                    "Logout",
+                    color = Color(0xFFD32F2F),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onCancel,
+                modifier = Modifier.padding(8.dp)
+            ) {
+                Text(
+                    "Cancel",
+                    color = Color(0xFF5C6BC0),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp
+                )
+            }
+        },
+        shape = RoundedCornerShape(12.dp),
+        containerColor = Color.White
+    )
 }
 
 @Composable

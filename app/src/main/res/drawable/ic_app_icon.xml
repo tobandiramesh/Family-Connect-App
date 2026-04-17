@@ -4,59 +4,70 @@
     android:viewportWidth="192"
     android:viewportHeight="192">
   
-  <!-- Left red heart (bright red) -->
-  <path
-      android:pathData="M38,72C38,57 48,47 61,47C70,47 78,53 82,63C83,60 84,57 86,54C89,47 97,42 105,42C119,42 130,52 130,68C130,89 108,110 82,132C56,110 36,89 36,72"
-      android:fillColor="#EF4444"/>
+  <!-- Rounded background with gradient effect -->
+  <group>
+    <!-- Outer rounded rectangle (purple border) -->
+    <path
+        android:pathData="M20,20 L172,20 Q180,20 180,28 L180,164 Q180,172 172,172 L20,172 Q12,172 12,164 L12,28 Q12,20 20,20 Z"
+        android:fillColor="#6366F1"/>
+    
+    <!-- Inner white background -->
+    <path
+        android:pathData="M28,28 L164,28 Q170,28 170,34 L170,158 Q170,164 164,164 L28,164 Q22,164 22,158 L22,34 Q22,28 28,28 Z"
+        android:fillColor="#FFFFFF"/>
+  </group>
   
-  <!-- Left heart lighter shade (for dimension) -->
-  <path
-      android:pathData="M38,72C38,57 48,47 61,47C70,47 78,53 82,63C83,60 84,57 86,54C89,47 97,42 105,42C119,42 130,52 130,68C130,78 120,87 105,98"
-      android:fillColor="#FCA5A5"
-      android:fillAlpha="0.5"/>
+  <!-- Main Hearts Group (centered) -->
+  <group>
+    <!-- Left Heart (Red/Coral) -->
+    <path
+        android:pathData="M 56,65 C 56,52 65,43 76,43 C 84,43 91,48 94,56 C 97,48 104,43 112,43 C 123,43 132,52 132,65 C 132,85 110,105 94,120 C 78,105 56,85 56,65 Z"
+        android:fillColor="#FF6B6B"/>
+    
+    <!-- Left Heart Highlight -->
+    <path
+        android:pathData="M 65,55 C 65,52 67,50 70,50 C 73,50 75,52 75,55"
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.7"/>
+    
+    <!-- Right Heart (Pink) -->
+    <path
+        android:pathData="M 100,75 C 100,62 109,53 120,53 C 128,53 135,58 138,66 C 141,58 148,53 156,53 C 167,53 176,62 176,75 C 176,95 154,115 138,130 C 122,115 100,95 100,75 Z"
+        android:fillColor="#FF4081"/>
+    
+    <!-- Right Heart Highlight -->
+    <path
+        android:pathData="M 119,63 C 119,60 121,58 124,58 C 127,58 129,60 129,63"
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.7"/>
+    
+    <!-- White Connecting Stroke/Style -->
+    <path
+        android:pathData="M 94,110 L 138,110"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillAlpha="0"/>
+  </group>
   
-  <!-- Right red heart (darker red) -->
-  <path
-      android:pathData="M88,72C88,57 98,47 111,47C120,47 128,53 132,63C133,60 134,57 136,54C139,47 147,42 155,42C169,42 180,52 180,68C180,89 158,110 132,132C106,110 86,89 86,72"
-      android:fillColor="#DC2626"/>
-  
-  <!-- Right heart lighter shade (for dimension) -->
-  <path
-      android:pathData="M88,72C88,57 98,47 111,47C120,47 128,53 132,63C133,60 134,57 136,54C139,47 147,42 155,42C169,42 180,52 180,68C180,78 170,87 155,98"
-      android:fillColor="#FCA5A5"
-      android:fillAlpha="0.6"/>
-  
-  <!-- Bright connecting line between hearts -->
-  <path
-      android:pathData="M82,98L132,98"
-      android:strokeColor="#FF4444"
-      android:strokeWidth="6"
-      android:strokeLineCap="round"/>
-  
-  <!-- White highlight on left heart -->
-  <path
-      android:pathData="M62,60C62,57 64,55 66,55C68,55 70,57 70,60"
-      android:fillColor="#FFFFFF"
-      android:fillAlpha="0.6"/>
-  
-  <!-- White highlight on right heart -->
-  <path
-      android:pathData="M112,60C112,57 114,55 116,55C118,55 120,57 120,60"
-      android:fillColor="#FFFFFF"
-      android:fillAlpha="0.6"/>
-  
-  <!-- Sparkle 1 (top left) -->
-  <path
-      android:pathData="M30,25L32,30L37,32L32,34L30,39L28,34L23,32L28,30Z"
-      android:fillColor="#FFD700"/>
-  
-  <!-- Sparkle 2 (top right) -->
-  <path
-      android:pathData="M162,28L163,32L166,34L163,36L162,40L161,36L158,34L161,32Z"
-      android:fillColor="#FFD700"/>
-  
-  <!-- Sparkle 3 (bottom center) -->
-  <path
-      android:pathData="M96,150L97,153L100,155L97,157L96,160L95,157L92,155L95,153Z"
-      android:fillColor="#FFD700"/>
+  <!-- Sparkles (top corners) -->
+  <group>
+    <!-- Top left sparkle -->
+    <path
+        android:pathData="M 45,35 L 47,40 L 52,42 L 47,44 L 45,49 L 43,44 L 38,42 L 43,40 Z"
+        android:fillColor="#A78BFA"
+        android:fillAlpha="0.8"/>
+    
+    <!-- Top right sparkle -->
+    <path
+        android:pathData="M 147,35 L 149,40 L 154,42 L 149,44 L 147,49 L 145,44 L 140,42 L 145,40 Z"
+        android:fillColor="#A78BFA"
+        android:fillAlpha="0.8"/>
+    
+    <!-- Small top center sparkle -->
+    <path
+        android:pathData="M 96,28 L 97,32 L 101,33 L 97,34 L 96,38 L 95,34 L 91,33 L 95,32 Z"
+        android:fillColor="#A78BFA"
+        android:fillAlpha="0.6"/>
+  </group>
 </vector>

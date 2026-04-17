@@ -6,6 +6,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,12 +16,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -81,15 +87,15 @@ fun EventsListScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(Color(0xFFFAFAFA))
     ) {
-        // Header
+        // Header - Clean and modern
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .background(Color.White)
+                .padding(14.dp, 12.dp, 14.dp, 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -97,21 +103,19 @@ fun EventsListScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    "🎉 Family Events",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    "Family Events",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF1A1A1A),
+                    fontSize = 22.sp
                 )
-                Button(
+                FloatingActionButton(
                     onClick = onCreateEvent,
-                    modifier = Modifier.size(40.dp),
-                    contentPadding = PaddingValues(0.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    ),
-                    shape = RoundedCornerShape(20.dp)
+                    modifier = Modifier.size(44.dp),
+                    containerColor = Color(0xFF5C6BC0),
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Event", tint = Color.White, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Add, contentDescription = "Add Event", tint = Color.White, modifier = Modifier.size(24.dp))
                 }
             }
 
@@ -131,19 +135,20 @@ fun EventsListScreen(
                     Icon(
                         Icons.Default.EventNote,
                         contentDescription = "No Events",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(64.dp)
+                        tint = Color(0xFFCCCCCC),
+                        modifier = Modifier.size(60.dp)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         "No events planned yet",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = Color(0xFF666666),
+                        fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         "Create a new event to get started",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = Color(0xFF999999)
                     )
                 }
             }
@@ -151,8 +156,8 @@ fun EventsListScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(events) { event ->
@@ -170,23 +175,36 @@ fun EventsListScreen(
 
 @Composable
 fun EventCategoryFilter() {
-    val categories = listOf("Birthday 🎂", "Anniversary 💕", "Grocery 🛒", "Medicine 💊", "Doctor 👨‍⚕️", "Other 📌")
+    val categories = listOf("Birthday", "Anniversary", "Grocery", "Medicine", "Doctor", "Other")
     var selectedCategory by remember { mutableStateOf("") }
 
     LazyRow(
         modifier = Modifier
             .fillMaxWidth()
-            .height(40.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(horizontal = 4.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(categories.size) { index ->
-            FilterChip(
-                selected = selectedCategory == categories[index],
-                onClick = { selectedCategory = if (selectedCategory == categories[index]) "" else categories[index] },
-                label = { Text(categories[index], fontSize = 11.sp) },
-                modifier = Modifier.height(32.dp)
-            )
+            val isSelected = selectedCategory == categories[index]
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(
+                        if (isSelected) Color(0xFF5C6BC0) else Color(0xFFF0F0F0)
+                    )
+                    .clickable {
+                        selectedCategory = if (isSelected) "" else categories[index]
+                    }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = categories[index],
+                    color = if (isSelected) Color.White else Color(0xFF1A1A1A),
+                    fontSize = 12.sp,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                )
+            }
         }
     }
 }
@@ -202,54 +220,61 @@ fun EventCard(
     val timeFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
     val eventDate = dateFormat.format(Date(event.dateTime))
     val eventTime = timeFormat.format(Date(event.dateTime))
-    
-    // Get creator name from phone number
-    val creatorName = allowedUsers.find { it.mobile.trim() == event.createdBy.trim() }?.name ?: event.createdBy
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
             .clickable { },
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Title and Category
+            // Title and Status dot
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        event.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            event.title,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF1A1A1A),
+                            fontSize = 15.sp
+                        )
+                        // Status indicator dot
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(Color(0xFF4CAF50), shape = RoundedCornerShape(50.dp))
+                        )
+                    }
                     Text(
                         event.category,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        "👤 by $creatorName",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF888888)
+                        color = Color(0xFF5C6BC0),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
-                // Color tag
+                // Compact color tag (hidden from main view, smaller)
                 Box(
                     modifier = Modifier
-                        .size(24.dp)
+                        .size(10.dp)
                         .background(
                             color = getCategoryColor(event.colorTag),
                             shape = RoundedCornerShape(50.dp)
@@ -260,114 +285,119 @@ fun EventCard(
             // Date & Time
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     Icons.Default.DateRange,
                     contentDescription = "Date",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
+                    tint = Color(0xFF999999),
+                    modifier = Modifier.size(14.dp)
                 )
                 Text(
                     "$eventDate at $eventTime",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF666666)
+                    color = Color(0xFF666666),
+                    fontSize = 12.sp
                 )
                 if (event.recurring) {
                     Text(
-                        "🔁 Repeats",
+                        "Repeats",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
+                        color = Color(0xFF5C6BC0),
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 10.sp
                     )
                 }
             }
 
-            // Description
+            // Description (if exists)
             if (event.description.isNotBlank()) {
                 Text(
                     event.description,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF888888),
+                    fontSize = 13.sp,
                     maxLines = 2
                 )
             }
 
-            // Location
+            // Location (if exists)
             if (event.location.isNotBlank()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         Icons.Default.LocationOn,
                         contentDescription = "Location",
                         tint = Color(0xFF999999),
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(12.dp)
                     )
                     Text(
                         event.location,
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF999999)
+                        color = Color(0xFF999999),
+                        fontSize = 12.sp
                     )
                 }
             }
 
-            // Reminder
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.Notifications,
-                    contentDescription = "Reminder",
-                    tint = Color(0xFF999999),
-                    modifier = Modifier.size(14.dp)
-                )
-                Text(
-                    "Reminder: ${getReminderText(event.reminderMinutes)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF999999)
-                )
+            // Reminder (if set)
+            if (event.reminderMinutes > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Notifications,
+                        contentDescription = "Reminder",
+                        tint = Color(0xFF999999),
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        "Reminder: ${getReminderText(event.reminderMinutes)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF999999),
+                        fontSize = 11.sp
+                    )
+                }
             }
             
-            // Action buttons
+            // Action buttons - Small modern icons
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
+                // Complete button - small icon
+                IconButton(
                     onClick = { onMarkComplete(event) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(36.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF4CAF50)
-                    ),
-                    shape = RoundedCornerShape(8.dp)
+                    modifier = Modifier.size(36.dp)
                 ) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Complete", fontSize = 12.sp, color = Color.White)
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = "Complete",
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
-                Button(
+                
+                // Delete button - small icon
+                IconButton(
                     onClick = { onDelete(event) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(36.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFe53935)
-                    ),
-                    shape = RoundedCornerShape(8.dp)
+                    modifier = Modifier.size(36.dp)
                 ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Delete", fontSize = 12.sp, color = Color.White)
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        tint = Color(0xFFE53935),
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
             }
         }
@@ -377,7 +407,7 @@ fun EventCard(
 @Composable
 fun EventCreationDialog(
     viewModel: FamilyViewModel,
-    allowedUsers: List<UserProfile>,  // Back to allowedUsers (converted from Firebase AllowedUser)
+    allowedUsers: List<UserProfile>,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -386,33 +416,24 @@ fun EventCreationDialog(
     var location by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Birthday") }
     var selectedDate by remember { mutableStateOf(System.currentTimeMillis()) }
-    var selectedTime by remember { mutableStateOf(Pair(12, 0)) }  // hour, minute
+    var selectedTime by remember { mutableStateOf(Pair(12, 0)) }
     var recurring by remember { mutableStateOf(false) }
-    var colorTag by remember { mutableStateOf("Blue") }
-    var reminderMinutes by remember { mutableStateOf(1440) }  // 1 day default
+    var reminderMinutes by remember { mutableStateOf(1440) }
     var selectedMembers by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
-    
-    // Collapsible section states
-    var expandEventInfo by remember { mutableStateOf(true) }
-    var expandEventDetails by remember { mutableStateOf(false) }
-    var expandInviteMembers by remember { mutableStateOf(false) }
-
-    // Update calendar whenever selectedDate changes
-    LaunchedEffect(selectedDate) {
-        // Calendar is referenced by the pickers, no need to update explicitly
-    }
+    var showMembersBottomSheet by remember { mutableStateOf(false) }
 
     if (showDatePicker) {
         val calendar = Calendar.getInstance().apply { timeInMillis = selectedDate }
         DatePickerDialog(
             context,
             { _, year, month, dayOfMonth ->
-                calendar.set(year, month, dayOfMonth)
-                calendar.set(Calendar.HOUR_OF_DAY, selectedTime.first)
-                calendar.set(Calendar.MINUTE, selectedTime.second)
-                selectedDate = calendar.timeInMillis
+                val cal = Calendar.getInstance().apply { timeInMillis = selectedDate }
+                cal.set(year, month, dayOfMonth)
+                cal.set(Calendar.HOUR_OF_DAY, selectedTime.first)
+                cal.set(Calendar.MINUTE, selectedTime.second)
+                selectedDate = cal.timeInMillis
                 showDatePicker = false
             },
             calendar.get(Calendar.YEAR),
@@ -425,17 +446,28 @@ fun EventCreationDialog(
         TimePickerDialog(
             context,
             { _, hour, minute ->
-                val calendar = Calendar.getInstance().apply { timeInMillis = selectedDate }
-                calendar.set(Calendar.HOUR_OF_DAY, hour)
-                calendar.set(Calendar.MINUTE, minute)
+                val cal = Calendar.getInstance().apply { timeInMillis = selectedDate }
+                cal.set(Calendar.HOUR_OF_DAY, hour)
+                cal.set(Calendar.MINUTE, minute)
                 selectedTime = Pair(hour, minute)
-                selectedDate = calendar.timeInMillis
+                selectedDate = cal.timeInMillis
                 showTimePicker = false
             },
             selectedTime.first,
             selectedTime.second,
             false
         ).show()
+    }
+
+    // Invite Members Bottom Sheet
+    if (showMembersBottomSheet) {
+        InviteMembersBottomSheet(
+            allowedUsers = allowedUsers,
+            selectedMembers = selectedMembers,
+            viewModel = viewModel,
+            onMembersSelected = { selectedMembers = it },
+            onDismiss = { showMembersBottomSheet = false }
+        )
     }
 
     Dialog(
@@ -452,315 +484,156 @@ fun EventCreationDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 // Header
                 Text(
                     "Create Event 🎉",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    fontSize = 18.sp,
+                    color = Color(0xFF1A1A1A)
                 )
 
-                // ===== SECTION 1: EVENT INFO =====
-                CollapsibleSection(
-                    title = "📌 Event Info",
-                    expanded = expandEventInfo,
-                    onToggle = { expandEventInfo = it }
+                // TITLE - Auto-focus
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Event Title") },
+                    placeholder = { Text("e.g., Mom's Birthday") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF5C6BC0)) }
+                )
+
+                // CATEGORY - Chips instead of dropdown
+                Text("Category", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF666666))
+                CategorySelector(
+                    selectedCategory = category,
+                    onCategorySelected = { category = it }
+                )
+
+                // DATE & TIME - Side by side buttons
+                Text("Date & Time", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF666666))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Title
-                    OutlinedTextField(
-                        value = title,
-                        onValueChange = { title = it },
-                        label = { Text("Event Title") },
-                        placeholder = { Text("e.g., Mom's Birthday") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp)) }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Category
-                    var showCategoryDropdown by remember { mutableStateOf(false) }
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
-                            value = category,
-                            onValueChange = { category = it },
-                            label = { Text("Category") },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp),
-                            readOnly = false,
-                            trailingIcon = { 
-                                Icon(
-                                    Icons.Default.ArrowDropDown, 
-                                    contentDescription = null,
-                                    modifier = Modifier.clickable { showCategoryDropdown = !showCategoryDropdown }
-                                ) 
-                            }
-                        )
-                        DropdownMenu(
-                            expanded = showCategoryDropdown,
-                            onDismissRequest = { showCategoryDropdown = false },
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .fillMaxWidth(0.95f)
-                        ) {
-                            listOf("Birthday", "Anniversary", "Grocery", "Medicine", "Doctor", "Other").forEach { cat ->
-                                DropdownMenuItem(
-                                    text = { Text(cat) },
-                                    onClick = {
-                                        category = cat
-                                        showCategoryDropdown = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Date & Time
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(selectedDate)),
-                            onValueChange = {},
-                            label = { Text("Date") },
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { showDatePicker = true },
-                            readOnly = true,
-                            shape = RoundedCornerShape(8.dp),
-                            leadingIcon = { Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                            trailingIcon = { Icon(Icons.Default.Edit, contentDescription = "Tap to change", modifier = Modifier.size(18.dp).clickable { showDatePicker = true }) }
-                        )
-
-                        OutlinedTextField(
-                            value = String.format("%02d:%02d", selectedTime.first, selectedTime.second),
-                            onValueChange = {},
-                            label = { Text("Time") },
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { showTimePicker = true },
-                            readOnly = true,
-                            shape = RoundedCornerShape(8.dp),
-                            leadingIcon = { Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                            trailingIcon = { Icon(Icons.Default.Edit, contentDescription = "Tap to change", modifier = Modifier.size(18.dp).clickable { showTimePicker = true }) }
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Recurring
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("🔁 Repeats every year")
-                        Switch(checked = recurring, onCheckedChange = { recurring = it })
-                    }
-                }
-
-                // ===== SECTION 2: EVENT DETAILS =====
-                CollapsibleSection(
-                    title = "📝 Event Details",
-                    expanded = expandEventDetails,
-                    onToggle = { expandEventDetails = it }
-                ) {
-                    OutlinedTextField(
-                        value = description,
-                        onValueChange = { description = it },
-                        label = { Text("Description (optional)") },
-                        placeholder = { Text("Add event details...") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(80.dp),
+                    OutlinedButton(
+                        onClick = { showDatePicker = true },
+                        modifier = Modifier.weight(1f),
+                        border = BorderStroke(1.dp, Color(0xFFDDDDDD)),
                         shape = RoundedCornerShape(8.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = location,
-                        onValueChange = { location = it },
-                        label = { Text("Location (optional)") },
-                        placeholder = { Text("e.g., Home, Hospital...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        leadingIcon = { Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(20.dp)) }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Color tag
-                    Text("🎨 Event Color", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf("Red", "Blue", "Green", "Yellow", "Purple", "Orange").forEach { color ->
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .background(
-                                        color = getCategoryColor(color),
-                                        shape = RoundedCornerShape(50.dp)
-                                    )
-                                    .clickable { colorTag = color }
-                                    .then(
-                                        if (colorTag == color) {
-                                            Modifier.border(3.dp, Color.Black, RoundedCornerShape(50.dp))
-                                        } else {
-                                            Modifier
-                                        }
-                                    )
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Reminder
-                    var reminderDays by remember { mutableStateOf(1) }
-                    var reminderHours by remember { mutableStateOf(0) }
-                    var reminderMinutesValue by remember { mutableStateOf(0) }
-                    
-                    // Calculate total minutes from days, hours, minutes
-                    LaunchedEffect(reminderDays, reminderHours, reminderMinutesValue) {
-                        reminderMinutes = reminderDays * 1440 + reminderHours * 60 + reminderMinutesValue
-                    }
-                    
-                    Text("Reminder (before event)", style = MaterialTheme.typography.labelSmall)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Days
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Days", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
-                            OutlinedTextField(
-                                value = reminderDays.toString(),
-                                onValueChange = { value ->
-                                    value.toIntOrNull()?.let { if (it >= 0) reminderDays = it }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(40.dp),
-                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                shape = RoundedCornerShape(6.dp)
-                            )
-                        }
-                        
-                        // Hours
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Hours", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
-                            OutlinedTextField(
-                                value = reminderHours.toString(),
-                                onValueChange = { value ->
-                                    value.toIntOrNull()?.let { if (it in 0..23) reminderHours = it }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(40.dp),
-                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                shape = RoundedCornerShape(6.dp)
-                            )
-                        }
-                        
-                        // Minutes
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Minutes", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
-                            OutlinedTextField(
-                                value = reminderMinutesValue.toString(),
-                                onValueChange = { value ->
-                                    value.toIntOrNull()?.let { if (it in 0..59) reminderMinutesValue = it }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(40.dp),
-                                textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                shape = RoundedCornerShape(6.dp)
-                            )
-                        }
-                    }
-                    Text(
-                        "Total: ${getReminderText(reminderMinutes)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-
-                // ===== SECTION 3: INVITE FAMILY MEMBERS =====
-                CollapsibleSection(
-                    title = "👨‍👩‍👧 Invite Family Members",
-                    expanded = expandInviteMembers,
-                    onToggle = { expandInviteMembers = it }
-                ) {
-                    // Filter out current user so they can't invite themselves
-                    val otherUsers = allowedUsers.filter { it.mobile != viewModel.currentUser?.mobile }
-                    
-                    if (otherUsers.isEmpty()) {
+                        Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF5C6BC0))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            "No family members available",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(8.dp)
+                            SimpleDateFormat("MMM dd", Locale.getDefault()).format(Date(selectedDate)),
+                            fontSize = 13.sp,
+                            color = Color(0xFF1A1A1A)
                         )
-                    } else {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            otherUsers.forEach { user ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("${user.name} (${user.mobile})", style = MaterialTheme.typography.labelMedium)
-                                    val isSelected = user.mobile.trim() in selectedMembers
-                                    Checkbox(
-                                        checked = isSelected,
-                                        onCheckedChange = { isChecked ->
-                                            if (isChecked) {
-                                                selectedMembers = selectedMembers + user.mobile.trim()
-                                            } else {
-                                                selectedMembers = selectedMembers - user.mobile.trim()
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { showTimePicker = true },
+                        modifier = Modifier.weight(1f),
+                        border = BorderStroke(1.dp, Color(0xFFDDDDDD)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF5C6BC0))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            String.format("%02d:%02d", selectedTime.first, selectedTime.second),
+                            fontSize = 13.sp,
+                            color = Color(0xFF1A1A1A)
+                        )
                     }
                 }
 
-                // Bottom Button
+                // REPEAT - Simple toggle
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFFAFAFA), RoundedCornerShape(8.dp))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Repeat yearly", fontSize = 13.sp, color = Color(0xFF1A1A1A))
+                    Switch(
+                        checked = recurring,
+                        onCheckedChange = { recurring = it },
+                        modifier = Modifier.scale(0.85f)
+                    )
+                }
+
+                // DESCRIPTION
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description (optional)") },
+                    placeholder = { Text("Add event details...") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(70.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    maxLines = 3
+                )
+
+                // LOCATION
+                OutlinedTextField(
+                    value = location,
+                    onValueChange = { location = it },
+                    label = { Text("Location (optional)") },
+                    placeholder = { Text("e.g., Home, Hospital...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF5C6BC0)) }
+                )
+
+                // REMINDER - Simple dropdown
+                ReminderDropdown(
+                    selectedMinutes = reminderMinutes,
+                    onReminderSelected = { reminderMinutes = it }
+                )
+
+                // INVITE MEMBERS - Button to open bottom sheet
+                Text(
+                    "Invite Members",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFF0F0F0), RoundedCornerShape(8.dp))
+                        .clickable { showMembersBottomSheet = true }
+                        .padding(12.dp),
+                    fontSize = 13.sp,
+                    color = Color(0xFF1A1A1A),
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                // Show selected members count
+                if (selectedMembers.isNotEmpty()) {
+                    Text(
+                        "✓ ${selectedMembers.size} member${if (selectedMembers.size > 1) "s" else ""} invited",
+                        fontSize = 11.sp,
+                        color = Color(0xFF4CAF50),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // CREATE BUTTON
                 Button(
                     onClick = {
                         if (title.isBlank()) {
+                            Toast.makeText(context, "Please enter event title", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
 
-                        val calendar = Calendar.getInstance().apply {
+                        val cal = Calendar.getInstance().apply {
                             timeInMillis = selectedDate
                             set(Calendar.HOUR_OF_DAY, selectedTime.first)
                             set(Calendar.MINUTE, selectedTime.second)
@@ -772,13 +645,13 @@ fun EventCreationDialog(
                             title = title,
                             description = description,
                             location = location,
-                            dateTime = calendar.timeInMillis,
-                            colorTag = colorTag,
+                            dateTime = cal.timeInMillis,
+                            colorTag = "Blue",
                             category = category,
                             recurring = recurring,
                             reminderMinutes = reminderMinutes,
-                            invitedMembers = invitedList,  // Use the list we created above with trim
-                            createdBy = viewModel.currentUser?.mobile?.trim() ?: "",  // TRIM creator mobile
+                            invitedMembers = invitedList,
+                            createdBy = viewModel.currentUser?.mobile?.trim() ?: "",
                             createdAtEpochMillis = System.currentTimeMillis()
                         )
 
@@ -789,26 +662,72 @@ fun EventCreationDialog(
                         .fillMaxWidth()
                         .height(48.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
+                        containerColor = Color(0xFF5C6BC0)
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Create Event", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Create Event", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                 }
 
-                Button(
+                // CANCEL BUTTON
+                OutlinedButton(
                     onClick = onDismiss,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
+                        .height(44.dp),
+                    border = BorderStroke(1.dp, Color(0xFFDDDDDD)),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Cancel", color = Color(0xFF666666), fontSize = 15.sp)
+                }
+            }
+        }
+    }
+}
+
+// NEW COMPOSABLES FOR MODERN EVENT CREATION
+
+@Composable
+private fun CategorySelector(
+    selectedCategory: String,
+    onCategorySelected: (String) -> Unit
+) {
+    val categories = listOf(
+        "🎂 Birthday",
+        "💍 Anniversary",
+        "🛒 Grocery",
+        "💊 Medicine",
+        "⚕️ Doctor",
+        "📝 Other"
+    )
+
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        items(categories) { cat ->
+            Surface(
+                modifier = Modifier
+                    .height(32.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onCategorySelected(cat) },
+                color = if (selectedCategory == cat) Color(0xFF5C6BC0) else Color(0xFFF0F0F0),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        cat,
+                        fontSize = 12.sp,
+                        color = if (selectedCategory == cat) Color.White else Color(0xFF1A1A1A),
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
@@ -816,52 +735,210 @@ fun EventCreationDialog(
 }
 
 @Composable
-fun CollapsibleSection(
-    title: String,
-    expanded: Boolean,
-    onToggle: (Boolean) -> Unit,
-    content: @Composable () -> Unit
+private fun ReminderDropdown(
+    selectedMinutes: Int,
+    onReminderSelected: (Int) -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Header
-        Row(
+    var expanded by remember { mutableStateOf(false) }
+
+    val reminderOptions = listOf(
+        Pair(10, "10 minutes"),
+        Pair(30, "30 minutes"),
+        Pair(60, "1 hour"),
+        Pair(1440, "1 day"),
+        Pair(2880, "2 days")
+    )
+
+    val selectedLabel = reminderOptions.find { it.first == selectedMinutes }?.second ?: "1 day"
+
+    Box {
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onToggle(!expanded) }
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFFF0F0F0))
+                .clickable { expanded = true }
+                .padding(12.dp),
+            color = Color.Transparent
         ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Icon(
-                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = if (expanded) "Collapse" else "Expand",
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(24.dp)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Schedule,
+                        contentDescription = null,
+                        tint = Color(0xFF5C6BC0),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        selectedLabel,
+                        fontSize = 13.sp,
+                        color = Color(0xFF1A1A1A),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Icon(
+                    Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = Color(0xFF666666),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
 
-        // Content
-        if (expanded) {
-            Column(
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.fillMaxWidth(0.9f)
+        ) {
+            reminderOptions.forEach { (minutes, label) ->
+                DropdownMenuItem(
+                    text = { Text(label, fontSize = 13.sp) },
+                    onClick = {
+                        onReminderSelected(minutes)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InviteMembersBottomSheet(
+    allowedUsers: List<UserProfile>,
+    selectedMembers: Set<String>,
+    viewModel: FamilyViewModel,
+    onMembersSelected: (Set<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var members by remember { mutableStateOf(selectedMembers) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    // Filter out current user
+    val otherUsers = allowedUsers.filter { it.mobile != viewModel.currentUser?.mobile }
+    val filteredUsers = if (searchQuery.isEmpty()) {
+        otherUsers
+    } else {
+        otherUsers.filter { it.name.contains(searchQuery, ignoreCase = true) || it.mobile.contains(searchQuery) }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        scrimColor = Color.Black.copy(alpha = 0.3f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header
+            Text(
+                "Invite Family Members",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1A1A1A)
+            )
+
+            // Search
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("Search members...", fontSize = 12.sp) },
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                shape = RoundedCornerShape(8.dp),
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF5C6BC0)) },
+                singleLine = true
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Members list
+            if (filteredUsers.isEmpty()) {
+                Text(
+                    "No family members available",
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999),
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(filteredUsers) { user ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFFAFAFA), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    members = if (user.mobile in members) {
+                                        members - user.mobile
+                                    } else {
+                                        members + user.mobile
+                                    }
+                                }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    user.name,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF1A1A1A)
+                                )
+                                Text(
+                                    user.mobile,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF999999)
+                                )
+                            }
+                            Checkbox(
+                                checked = user.mobile in members,
+                                onCheckedChange = {
+                                    members = if (user.mobile in members) {
+                                        members - user.mobile
+                                    } else {
+                                        members + user.mobile
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Done button
+            Button(
+                onClick = {
+                    onMembersSelected(members)
+                    onDismiss()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5C6BC0)),
+                shape = RoundedCornerShape(8.dp)
             ) {
-                content()
+                Text(
+                    "Done (${members.size})",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
             }
         }
     }
