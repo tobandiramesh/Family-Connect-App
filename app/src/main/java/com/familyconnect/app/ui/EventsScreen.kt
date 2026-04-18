@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
@@ -422,7 +424,8 @@ fun EventCreationDialog(
     var selectedMembers by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
-    var showMembersBottomSheet by remember { mutableStateOf(false) }
+    var showMembersExpanded by remember { mutableStateOf(false) }
+    var memberSearchQuery by remember { mutableStateOf("") }
 
     if (showDatePicker) {
         val calendar = Calendar.getInstance().apply { timeInMillis = selectedDate }
@@ -457,17 +460,6 @@ fun EventCreationDialog(
             selectedTime.second,
             false
         ).show()
-    }
-
-    // Invite Members Bottom Sheet
-    if (showMembersBottomSheet) {
-        InviteMembersBottomSheet(
-            allowedUsers = allowedUsers,
-            selectedMembers = selectedMembers,
-            viewModel = viewModel,
-            onMembersSelected = { selectedMembers = it },
-            onDismiss = { showMembersBottomSheet = false }
-        )
     }
 
     Dialog(
@@ -600,27 +592,148 @@ fun EventCreationDialog(
                     onReminderSelected = { reminderMinutes = it }
                 )
 
-                // INVITE MEMBERS - Button to open bottom sheet
-                Text(
-                    "Invite Members",
+                // INVITE MEMBERS - Inline expandable section
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFF0F0F0), RoundedCornerShape(8.dp))
-                        .clickable { showMembersBottomSheet = true }
+                        .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
+                        .clickable { showMembersExpanded = !showMembersExpanded }
                         .padding(12.dp),
-                    fontSize = 13.sp,
-                    color = Color(0xFF1A1A1A),
-                    fontWeight = FontWeight.SemiBold
-                )
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Person,
+                                contentDescription = null,
+                                tint = Color(0xFF5C6BC0),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                "Invite Members",
+                                fontSize = 13.sp,
+                                color = Color(0xFF1A1A1A),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (selectedMembers.isNotEmpty()) {
+                                Text(
+                                    "(${selectedMembers.size})",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF4CAF50),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                        Icon(
+                            if (showMembersExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            tint = Color(0xFF666666),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
 
-                // Show selected members count
-                if (selectedMembers.isNotEmpty()) {
-                    Text(
-                        "✓ ${selectedMembers.size} member${if (selectedMembers.size > 1) "s" else ""} invited",
-                        fontSize = 11.sp,
-                        color = Color(0xFF4CAF50),
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    // Expanded members list
+                    if (showMembersExpanded) {
+                        Divider(modifier = Modifier.fillMaxWidth())
+                        
+                        // Search field
+                        OutlinedTextField(
+                            value = memberSearchQuery,
+                            onValueChange = { memberSearchQuery = it },
+                            placeholder = { Text("Search members...", fontSize = 11.sp) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF5C6BC0)) },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodySmall
+                        )
+
+                        // Members list
+                        val currentUserMobile = viewModel.currentUser?.mobile?.trim() ?: ""
+                        val otherUsers = allowedUsers.filter { it.mobile.trim() != currentUserMobile }
+                        val filteredUsers = if (memberSearchQuery.isEmpty()) {
+                            otherUsers
+                        } else {
+                            otherUsers.filter { it.name.contains(memberSearchQuery, ignoreCase = true) || it.mobile.contains(memberSearchQuery) }
+                        }
+
+                        if (filteredUsers.isEmpty()) {
+                            Text(
+                                if (otherUsers.isEmpty()) "No family members available" else "No members match search",
+                                fontSize = 11.sp,
+                                color = Color(0xFF999999),
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 200.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                filteredUsers.forEach { user ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color.White, RoundedCornerShape(6.dp))
+                                            .clickable {
+                                                selectedMembers = if (user.mobile in selectedMembers) {
+                                                    selectedMembers - user.mobile
+                                                } else {
+                                                    selectedMembers + user.mobile
+                                                }
+                                            }
+                                            .padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                user.name,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color(0xFF1A1A1A)
+                                            )
+                                            Text(
+                                                user.mobile,
+                                                fontSize = 10.sp,
+                                                color = Color(0xFF999999)
+                                            )
+                                        }
+                                        Checkbox(
+                                            checked = user.mobile in selectedMembers,
+                                            onCheckedChange = {
+                                                selectedMembers = if (user.mobile in selectedMembers) {
+                                                    selectedMembers - user.mobile
+                                                } else {
+                                                    selectedMembers + user.mobile
+                                                }
+                                            },
+                                            modifier = Modifier.scale(0.8f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (selectedMembers.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "✓ ${selectedMembers.size} member${if (selectedMembers.size > 1) "s" else ""} selected",
+                                fontSize = 10.sp,
+                                color = Color(0xFF4CAF50),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -810,143 +923,6 @@ private fun ReminderDropdown(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun InviteMembersBottomSheet(
-    allowedUsers: List<UserProfile>,
-    selectedMembers: Set<String>,
-    viewModel: FamilyViewModel,
-    onMembersSelected: (Set<String>) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var members by remember { mutableStateOf(selectedMembers) }
-    var searchQuery by remember { mutableStateOf("") }
-
-    // Filter out current user (trim both for comparison)
-    val currentUserMobile = viewModel.currentUser?.mobile?.trim() ?: ""
-    val otherUsers = allowedUsers.filter { it.mobile.trim() != currentUserMobile }
-    
-    Log.d("InviteMembersBS", "Current mobile: '$currentUserMobile', Total users: ${allowedUsers.size}, Other users (filtered): ${otherUsers.size}")
-    
-    val filteredUsers = if (searchQuery.isEmpty()) {
-        otherUsers
-    } else {
-        otherUsers.filter { it.name.contains(searchQuery, ignoreCase = true) || it.mobile.contains(searchQuery) }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Color.White,
-        scrimColor = Color.Black.copy(alpha = 0.3f)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Header
-            Text(
-                "Invite Family Members",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1A1A1A)
-            )
-
-            // Search
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search members...", fontSize = 12.sp) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF5C6BC0)) },
-                singleLine = true
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Members list
-            if (filteredUsers.isEmpty()) {
-                Text(
-                    "No family members available",
-                    fontSize = 12.sp,
-                    color = Color(0xFF999999),
-                    modifier = Modifier.padding(16.dp)
-                )
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(filteredUsers) { user ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFFFAFAFA), RoundedCornerShape(8.dp))
-                                .clickable {
-                                    members = if (user.mobile in members) {
-                                        members - user.mobile
-                                    } else {
-                                        members + user.mobile
-                                    }
-                                }
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    user.name,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF1A1A1A)
-                                )
-                                Text(
-                                    user.mobile,
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF999999)
-                                )
-                            }
-                            Checkbox(
-                                checked = user.mobile in members,
-                                onCheckedChange = {
-                                    members = if (user.mobile in members) {
-                                        members - user.mobile
-                                    } else {
-                                        members + user.mobile
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Done button
-            Button(
-                onClick = {
-                    onMembersSelected(members)
-                    onDismiss()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5C6BC0)),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text(
-                    "Done (${members.size})",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-        }
-    }
-}
 
 fun getCategoryColor(color: String): Color {
     return when (color) {

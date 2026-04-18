@@ -60,6 +60,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Info
@@ -125,6 +126,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -2607,17 +2609,8 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
     var reminderDetails by remember { mutableStateOf("") }
     var assignedTo by remember { mutableStateOf(mutableListOf<String>()) }
     var reminderMinutes by remember { mutableStateOf(30) }
-    var showAssignSheet by remember { mutableStateOf(false) }
-
-    if (showAssignSheet) {
-        AssignRemindersBottomSheet(
-            allowedUsers = allowedUsers,
-            selectedMembers = assignedTo.toSet(),
-            viewModel = viewModel,
-            onMembersSelected = { assignedTo = it.toMutableList() },
-            onDismiss = { showAssignSheet = false }
-        )
-    }
+    var showAssignExpanded by remember { mutableStateOf(false) }
+    var assignSearchQuery by remember { mutableStateOf("") }
 
     if (showCreateReminder) {
         Dialog(
@@ -2669,15 +2662,15 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
                         maxLines = 3
                     )
 
-                    // Assign Members Button
-                    Surface(
+                    // Assign Members - Inline expandable section
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFF0F0F0))
-                            .clickable { showAssignSheet = true }
+                            .background(Color(0xFFF5F5F5))
+                            .clickable { showAssignExpanded = !showAssignExpanded }
                             .padding(12.dp),
-                        color = Color.Transparent
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -2700,28 +2693,118 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
                                     color = Color(0xFF1A1A1A),
                                     fontWeight = FontWeight.SemiBold
                                 )
+                                if (assignedTo.isNotEmpty()) {
+                                    Text(
+                                        "(${assignedTo.size})",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF4CAF50),
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             }
                             Icon(
-                                Icons.Default.ChevronRight,
+                                if (showAssignExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                 contentDescription = null,
                                 tint = Color(0xFF666666),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
-                    }
 
-                    // Show selected members
-                    if (assignedTo.isNotEmpty()) {
-                        val assignedNames = allowedUsers
-                            .filter { it.mobile in assignedTo }
-                            .map { it.name }
-                            .joinToString(", ")
-                        Text(
-                            "✓ $assignedNames",
-                            fontSize = 11.sp,
-                            color = Color(0xFF4CAF50),
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        // Expanded members list
+                        if (showAssignExpanded) {
+                            Divider(modifier = Modifier.fillMaxWidth())
+                            
+                            // Search field
+                            OutlinedTextField(
+                                value = assignSearchQuery,
+                                onValueChange = { assignSearchQuery = it },
+                                placeholder = { Text("Search members...", fontSize = 11.sp) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF5C6BC0)) },
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodySmall
+                            )
+
+                            // Members list
+                            val currentUserMobile = viewModel.currentUser?.mobile?.trim() ?: ""
+                            val otherUsers = allowedUsers.filter { it.mobile.trim() != currentUserMobile }
+                            val filteredUsers = if (assignSearchQuery.isEmpty()) {
+                                otherUsers
+                            } else {
+                                otherUsers.filter { it.name.contains(assignSearchQuery, ignoreCase = true) || it.mobile.contains(assignSearchQuery) }
+                            }
+
+                            if (filteredUsers.isEmpty()) {
+                                Text(
+                                    if (otherUsers.isEmpty()) "No family members available" else "No members match search",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF999999),
+                                    modifier = Modifier.padding(8.dp)
+                                )
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 200.dp)
+                                        .verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    filteredUsers.forEach { user ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(Color.White, RoundedCornerShape(6.dp))
+                                                .clickable {
+                                                    assignedTo = if (user.mobile in assignedTo) {
+                                                        assignedTo.filter { it != user.mobile }.toMutableList()
+                                                    } else {
+                                                        (assignedTo + user.mobile).toMutableList()
+                                                    }
+                                                }
+                                                .padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    user.name,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color(0xFF1A1A1A)
+                                                )
+                                                Text(
+                                                    user.mobile,
+                                                    fontSize = 10.sp,
+                                                    color = Color(0xFF999999)
+                                                )
+                                            }
+                                            Checkbox(
+                                                checked = user.mobile in assignedTo,
+                                                onCheckedChange = {
+                                                    assignedTo = if (user.mobile in assignedTo) {
+                                                        assignedTo.filter { it != user.mobile }.toMutableList()
+                                                    } else {
+                                                        (assignedTo + user.mobile).toMutableList()
+                                                    }
+                                                },
+                                                modifier = Modifier.scale(0.8f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (assignedTo.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "✓ ${assignedTo.size} member${if (assignedTo.size > 1) "s" else ""} selected",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF4CAF50),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
                     }
 
                     // Reminder Time Dropdown
@@ -2945,140 +3028,7 @@ private fun ReminderTimeDropdown(
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AssignRemindersBottomSheet(
-    allowedUsers: List<AllowedUser>,
-    selectedMembers: Set<String>,
-    viewModel: FamilyViewModel,
-    onMembersSelected: (Set<String>) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var members by remember { mutableStateOf(selectedMembers) }
-    var searchQuery by remember { mutableStateOf("") }
-
-    // Filter out current user
-    val otherUsers = allowedUsers.filter { it.mobile != viewModel.currentUser?.mobile }
-    val filteredUsers = if (searchQuery.isEmpty()) {
-        otherUsers
-    } else {
-        otherUsers.filter { it.name.contains(searchQuery, ignoreCase = true) || it.mobile.contains(searchQuery) }
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Color.White,
-        scrimColor = Color.Black.copy(alpha = 0.3f)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Header
-            Text(
-                "Assign to Members",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1A1A1A)
-            )
-
-            // Search
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search members...", fontSize = 12.sp) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF5C6BC0)) },
-                singleLine = true
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Members list
-            if (filteredUsers.isEmpty()) {
-                Text(
-                    "No family members available",
-                    fontSize = 12.sp,
-                    color = Color(0xFF999999),
-                    modifier = Modifier.padding(16.dp)
-                )
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(filteredUsers) { user ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFFFAFAFA), RoundedCornerShape(8.dp))
-                                .clickable {
-                                    members = if (user.mobile in members) {
-                                        members - user.mobile
-                                    } else {
-                                        members + user.mobile
-                                    }
-                                }
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    user.name,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF1A1A1A)
-                                )
-                                Text(
-                                    user.mobile,
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF999999)
-                                )
-                            }
-                            Checkbox(
-                                checked = user.mobile in members,
-                                onCheckedChange = {
-                                    members = if (user.mobile in members) {
-                                        members - user.mobile
-                                    } else {
-                                        members + user.mobile
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Done button
-            Button(
-                onClick = {
-                    onMembersSelected(members)
-                    onDismiss()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5C6BC0)),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text(
-                    "Done (${members.size})",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-        }
-    }
-}
+// BOTTOM SHEET COMPOSABLES MOVED INLINE TO DIALOGS FOR BETTER UX
 
 @Composable
 private fun ReminderCard(
