@@ -128,6 +128,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -146,10 +147,13 @@ import com.familyconnect.app.webrtc.CallType
 import com.familyconnect.app.data.model.FamilyRole
 import com.familyconnect.app.ui.theme.FamilyConnectTheme
 import com.familyconnect.app.webrtc.CallStatus
+import com.familyconnect.app.ui.games.GamesScreen
+import androidx.compose.material.icons.filled.Gamepad
 
 private enum class HomeTab {
     CHAT,
     EVENTS,
+    GAMES,
     REMINDERS,
     SETTINGS
 }
@@ -685,6 +689,20 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
                                 unselectedTextColor = Color(0xFF999999)
                             )
                         )
+                        // Games Tab
+                        NavigationBarItem(
+                            selected = selectedTab == HomeTab.GAMES,
+                            onClick = { selectedTab = HomeTab.GAMES },
+                            icon = { Icon(Icons.Default.Gamepad, contentDescription = "Games", modifier = Modifier.size(22.dp)) },
+                            label = { Text("Games", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
+                            colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF5C6BC0),
+                                selectedTextColor = Color(0xFF5C6BC0),
+                                indicatorColor = Color(0xFFE8EAF6),
+                                unselectedIconColor = Color(0xFF999999),
+                                unselectedTextColor = Color(0xFF999999)
+                            )
+                        )
                         // Reminders Tab
                         NavigationBarItem(
                             selected = selectedTab == HomeTab.REMINDERS,
@@ -734,6 +752,7 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
                             }
                         )
                         HomeTab.EVENTS -> EventsScreen(viewModel)
+                        HomeTab.GAMES -> GamesScreen()
                         HomeTab.REMINDERS -> RemindersScreen(viewModel)
                         HomeTab.SETTINGS -> SettingsScreen(viewModel, user.role)
                     }
@@ -2611,6 +2630,7 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
     var reminderMinutes by remember { mutableStateOf(30) }
     var showAssignExpanded by remember { mutableStateOf(false) }
     var assignSearchQuery by remember { mutableStateOf("") }
+    var showFormatToolbar by remember { mutableStateOf(false) }
 
     if (showCreateReminder) {
         Dialog(
@@ -2650,17 +2670,115 @@ private fun RemindersScreen(viewModel: FamilyViewModel) {
                         leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF5C6BC0)) }
                     )
 
-                    // Details
-                    OutlinedTextField(
-                        value = reminderDetails,
-                        onValueChange = { reminderDetails = it },
-                        label = { Text("Details (optional)") },
+                    // Details with formatting toolbar
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(70.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        maxLines = 3
-                    )
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Formatting toolbar (collapsible)
+                        if (showFormatToolbar) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFFF5F5F5), RoundedCornerShape(8.dp))
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val buttonModifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color.White)
+                                    .border(1.dp, Color(0xFFDDDDDD), RoundedCornerShape(6.dp))
+                                    .clickable {
+                                        val start = 0
+                                        val end = reminderDetails.length
+                                        reminderDetails = reminderDetails.substring(0, start) + "**" + reminderDetails.substring(start, end) + "**" + reminderDetails.substring(end)
+                                    }
+                                    .padding(6.dp)
+
+                                IconButton(
+                                    onClick = {
+                                        reminderDetails = "**" + reminderDetails + "**"
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Text("B", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF5C6BC0))
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        reminderDetails = "*" + reminderDetails + "*"
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Text("I", fontStyle = FontStyle.Italic, fontSize = 14.sp, color = Color(0xFF5C6BC0))
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        reminderDetails = if (reminderDetails.isEmpty()) "• " else reminderDetails + "\n• "
+                                    },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Text("•", fontSize = 16.sp, color = Color(0xFF5C6BC0))
+                                }
+
+                                Spacer(modifier = Modifier.weight(1f))
+
+                                IconButton(
+                                    onClick = { showFormatToolbar = false },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF999999))
+                                }
+                            }
+                        }
+
+                        // Details input field - expandable
+                        OutlinedTextField(
+                            value = reminderDetails,
+                            onValueChange = { reminderDetails = it },
+                            label = { Text("Details (optional)") },
+                            placeholder = { Text("Add details... e.g., 'Call dentist at 2pm', 'Pick up groceries'", fontSize = 12.sp, color = Color(0xFFBBBBBB)) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 120.dp, max = 250.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            maxLines = 8,
+                            trailingIcon = {
+                                if (!showFormatToolbar) {
+                                    IconButton(
+                                        onClick = { showFormatToolbar = true },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Show formatting", modifier = Modifier.size(16.dp), tint = Color(0xFF5C6BC0))
+                                    }
+                                }
+                            }
+                        )
+
+                        // Character counter and helper text
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "More details help family members understand better",
+                                fontSize = 10.sp,
+                                color = Color(0xFF999999),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            Text(
+                                "${reminderDetails.length}/500",
+                                fontSize = 10.sp,
+                                color = if (reminderDetails.length > 400) Color(0xFFFF9800) else Color(0xFF999999),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
 
                     // Assign Members - Inline expandable section
                     Column(
