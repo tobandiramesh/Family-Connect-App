@@ -29,12 +29,12 @@ data class GameItem(
 fun GamesScreen() {
     var selectedGame by remember { mutableStateOf<String?>(null) }
 
-    if (selectedGame == "tictactoe") {
-        TicTacToeGame()
-    } else {
-        GameLibraryScreen(
-            onGameSelected = { selectedGame = it }
-        )
+    when (selectedGame) {
+        "tictactoe" -> TicTacToeGame(onBack = { selectedGame = null })
+        "memory_match" -> MemoryMatchGame(onBack = { selectedGame = null })
+        "word_puzzle" -> WordPuzzleGame(onBack = { selectedGame = null })
+        "chess" -> ChessGame(onBack = { selectedGame = null })
+        else -> GameLibraryScreen(onGameSelected = { selectedGame = it })
     }
 }
 
@@ -49,25 +49,25 @@ private fun GameLibraryScreen(onGameSelected: (String) -> Unit) {
             status = "Available"
         ),
         GameItem(
-            id = "coming_soon_1",
+            id = "memory_match",
             name = "Memory Match",
             emoji = "🧠",
             description = "Find matching pairs",
-            status = "Coming Soon"
+            status = "Available"
         ),
         GameItem(
-            id = "coming_soon_2",
+            id = "word_puzzle",
             name = "Word Puzzle",
             emoji = "🔤",
             description = "Solve word challenges",
-            status = "Coming Soon"
+            status = "Available"
         ),
         GameItem(
-            id = "coming_soon_3",
-            name = "20 Questions",
-            emoji = "❓",
-            description = "Guess the mystery",
-            status = "Coming Soon"
+            id = "chess",
+            name = "Chess",
+            emoji = "♟",
+            description = "Strategic board game",
+            status = "Available"
         )
     )
 

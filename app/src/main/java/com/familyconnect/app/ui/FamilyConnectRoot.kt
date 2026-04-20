@@ -149,11 +149,13 @@ import com.familyconnect.app.ui.theme.FamilyConnectTheme
 import com.familyconnect.app.webrtc.CallStatus
 import com.familyconnect.app.ui.games.GamesScreen
 import androidx.compose.material.icons.filled.Gamepad
+import androidx.compose.material.icons.filled.Newspaper
 
 private enum class HomeTab {
     CHAT,
     EVENTS,
     GAMES,
+    NEWS,
     REMINDERS,
     SETTINGS
 }
@@ -703,6 +705,20 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
                                 unselectedTextColor = Color(0xFF999999)
                             )
                         )
+                        // News Tab
+                        NavigationBarItem(
+                            selected = selectedTab == HomeTab.NEWS,
+                            onClick = { selectedTab = HomeTab.NEWS },
+                            icon = { Icon(Icons.Default.Newspaper, contentDescription = "News", modifier = Modifier.size(22.dp)) },
+                            label = { Text("News", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
+                            colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color(0xFF5C6BC0),
+                                selectedTextColor = Color(0xFF5C6BC0),
+                                indicatorColor = Color(0xFFE8EAF6),
+                                unselectedIconColor = Color(0xFF999999),
+                                unselectedTextColor = Color(0xFF999999)
+                            )
+                        )
                         // Reminders Tab
                         NavigationBarItem(
                             selected = selectedTab == HomeTab.REMINDERS,
@@ -753,6 +769,7 @@ private fun HomeScreen(viewModel: FamilyViewModel) {
                         )
                         HomeTab.EVENTS -> EventsScreen(viewModel)
                         HomeTab.GAMES -> GamesScreen()
+                        HomeTab.NEWS -> NewsScreen()
                         HomeTab.REMINDERS -> RemindersScreen(viewModel)
                         HomeTab.SETTINGS -> SettingsScreen(viewModel, user.role)
                     }
